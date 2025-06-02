@@ -1,0 +1,12 @@
+
+mistralai
+python-dotenv
+gradio>=4.0
+fastmcp>=2.0
+chromadb
+sentence-transformers
+unstructured
+requests
+beautifulsoup4
+plotly
+networkx
