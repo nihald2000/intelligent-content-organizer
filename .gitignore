@@ -1,0 +1,33 @@
+# Ignore environment variables
+.env
+
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Ignore Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Ignore virtual environment folders
+env/
+venv/
+ENV/
+VENV/
+
+# Ignore VSCode-specific files
+.vscode/
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore database or app data
+db/
+*.sqlite3
+
+# Ignore Gradio temp files
+gradio_cached_examples/
+tmp/
+*.log

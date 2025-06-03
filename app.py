@@ -1,157 +1,254 @@
-import os
-import uuid
 import gradio as gr
-from gradio import components
-from fastmcp import FastMCP
-# from core.parser import parse_document, parse_url
-from core.parser import parse_document, parse_url
-from core.summarizer import summarize_content, tag_content
-from core.storage import add_document, search_documents
-from core.agent import answer_question
-# from core.components import DocumentViewer
-import plotly.graph_objects as go
+import asyncio
+from pathlib import Path
+import tempfile
+import json
+from typing import List, Dict, Any
+import logging
 
-# Initialize the FastMCP server (for agentic tools)
-mcp = FastMCP("IntelligentContentOrganizer")
+from config import Config
+from mcp_server import mcp
+# Handle imports based on how the app is run
+try:
+    from mcp_server import mcp
+    MCP_AVAILABLE = True
+except ImportError:
+    MCP_AVAILABLE = False
+    print("⚠️ MCP server not available, running in standalone mode")
 
-# Gradio UI functions
-def process_content(file_obj, url, tags_input):
+import mcp_tools
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Validate configuration on startup
+try:
+    Config.validate()
+except ValueError as e:
+    logger.error(f"Configuration error: {e}")
+    print(f"⚠️ Configuration error: {e}")
+    print("Please set the required API keys in your environment variables or .env file")
+
+# Global state for search results
+current_results = []
+
+async def process_file_handler(file):
+    """Handle file upload and processing"""
+    if file is None:
+        return "Please upload a file", "", "", None
+    
+    try:
+        # Process the file
+        result = await mcp_tools.process_local_file(file.name)
+        
+        if result.get("success"):
+            tags_display = ", ".join(result["tags"])
+            return (
+                f"✅ Successfully processed: {result['file_name']}",
+                result["summary"],
+                tags_display,
+                gr.update(visible=True, value=create_result_card(result))
+            )
+        else:
+            return f"❌ Error: {result.get('error', 'Unknown error')}", "", "", None
+            
+    except Exception as e:
+        logger.error(f"Error in file handler: {str(e)}")
+        return f"❌ Error: {str(e)}", "", "", None
+
+async def process_url_handler(url):
+    """Handle URL processing"""
+    if not url:
+        return "Please enter a URL", "", "", None
+    
+    try:
+        # Process the URL
+        result = await mcp_tools.process_web_content(url)
+        
+        if result.get("success"):
+            tags_display = ", ".join(result["tags"])
+            return (
+                f"✅ Successfully processed: {url}",
+                result["summary"],
+                tags_display,
+                gr.update(visible=True, value=create_result_card(result))
+            )
+        else:
+            return f"❌ Error: {result.get('error', 'Unknown error')}", "", "", None
+            
+    except Exception as e:
+        logger.error(f"Error in URL handler: {str(e)}")
+        return f"❌ Error: {str(e)}", "", "", None
+
+async def search_handler(query):
+    """Handle semantic search"""
+    if not query:
+        return [], "Please enter a search query"
+    
+    try:
+        # Perform search
+        results = await mcp_tools.search_knowledge_base(query, limit=10)
+        
+        if results:
+            # Create display cards for each result
+            result_cards = []
+            for result in results:
+                card = f"""
+                ### 📄 {result.get('source', 'Unknown Source')}
+                **Tags:** {', '.join(result.get('tags', []))}
+                
+                **Summary:** {result.get('summary', 'No summary available')}
+                
+                **Relevance:** {result.get('relevance_score', 0):.2%}
+                
+                ---
+                """
+                result_cards.append(card)
+            
+            global current_results
+            current_results = results
+            
+            return result_cards, f"Found {len(results)} results"
+        else:
+            return [], "No results found"
+            
+    except Exception as e:
+        logger.error(f"Error in search: {str(e)}")
+        return [], f"Error: {str(e)}"
+
+def create_result_card(result: Dict[str, Any]) -> str:
+    """Create a formatted result card"""
+    return f"""
+    ### 📋 Processing Complete
+    
+    **Document ID:** {result.get('doc_id', 'N/A')}
+    
+    **Source:** {result.get('file_name', result.get('url', 'Unknown'))}
+    
+    **Tags:** {', '.join(result.get('tags', []))}
+    
+    **Summary:** {result.get('summary', 'No summary available')}
+    
+    **Chunks Processed:** {result.get('chunks_processed', 0)}
     """
-    Handle file upload or URL input: parse content, summarize, tag, store.
-    """
-    content_text = ""
-    source = ""
-    if file_obj is not None:
-        # Save uploaded file to temp path
-        file_path = file_obj.name
-        content_text = parse_document(file_path)
-        source = file_obj.name
-    elif url:
-        content_text = parse_url(url)
-        source = url
-    else:
-        return "No document provided.", "", "", ""
 
-    # Summarize and tag (simulated)
-    summary = summarize_content(content_text)
-    tags = tag_content(content_text)
+# Create Gradio interface
+with gr.Blocks(title="Intelligent Content Organizer - MCP Agent") as demo:
+    gr.Markdown("""
+    # 🧠 Intelligent Content Organizer
+    ### MCP-Powered Knowledge Management System
+    
+    This AI-driven system automatically organizes, enriches, and retrieves your digital content.
+    Upload files or provide URLs to build your personal knowledge base with automatic tagging and semantic search.
+    
+    ---
+    """)
+    
+    with gr.Tabs():
+        # File Processing Tab
+        with gr.TabItem("📁 Process Files"):
+            with gr.Row():
+                with gr.Column():
+                    file_input = gr.File(
+                        label="Upload Document",
+                        file_types=[".pdf", ".txt", ".docx", ".doc", ".html", ".md", ".csv", ".json"]
+                    )
+                    file_process_btn = gr.Button("Process File", variant="primary")
+                
+                with gr.Column():
+                    file_status = gr.Textbox(label="Status", lines=1)
+                    file_summary = gr.Textbox(label="Generated Summary", lines=3)
+                    file_tags = gr.Textbox(label="Generated Tags", lines=1)
+            
+            file_result = gr.Markdown(visible=False)
+        
+        # URL Processing Tab
+        with gr.TabItem("🌐 Process URLs"):
+            with gr.Row():
+                with gr.Column():
+                    url_input = gr.Textbox(
+                        label="Enter URL",
+                        placeholder="https://example.com/article"
+                    )
+                    url_process_btn = gr.Button("Process URL", variant="primary")
+                
+                with gr.Column():
+                    url_status = gr.Textbox(label="Status", lines=1)
+                    url_summary = gr.Textbox(label="Generated Summary", lines=3)
+                    url_tags = gr.Textbox(label="Generated Tags", lines=1)
+            
+            url_result = gr.Markdown(visible=False)
+        
+        # Search Tab
+        with gr.TabItem("🔍 Semantic Search"):
+            search_input = gr.Textbox(
+                label="Search Query",
+                placeholder="Enter your search query...",
+                lines=1
+            )
+            search_btn = gr.Button("Search", variant="primary")
+            search_status = gr.Textbox(label="Status", lines=1)
+            
+            search_results = gr.Markdown(label="Search Results")
+        
+        # MCP Server Info Tab
+        with gr.TabItem("ℹ️ MCP Server Info"):
+            gr.Markdown("""
+            ### MCP Server Configuration
+            
+            This Gradio app also functions as an MCP (Model Context Protocol) server, allowing integration with:
+            - Claude Desktop
+            - Cursor
+            - Other MCP-compatible clients
+            
+            **Server Name:** intelligent-content-organizer
+            
+            **Available Tools:**
+            - `process_file`: Process local files and extract content
+            - `process_url`: Fetch and process web content
+            - `semantic_search`: Search across stored documents
+            - `get_document_summary`: Get detailed document information
+            
+            **To use as MCP server:**
+            1. Add this server to your MCP client configuration
+            2. Use the tools listed above to interact with your knowledge base
+            3. All processed content is automatically indexed for semantic search
+            
+            **Tags:** mcp-server-track
+            """)
+    
+    # Event handlers
+    file_process_btn.click(
+        fn=lambda x: asyncio.run(process_file_handler(x)),
+        inputs=[file_input],
+        outputs=[file_status, file_summary, file_tags, file_result]
+    )
+    
+    url_process_btn.click(
+        fn=lambda x: asyncio.run(process_url_handler(x)),
+        inputs=[url_input],
+        outputs=[url_status, url_summary, url_tags, url_result]
+    )
+    
+    search_btn.click(
+        fn=lambda x: asyncio.run(search_handler(x)),
+        inputs=[search_input],
+        outputs=[search_results, search_status]
+    )
 
-    # Allow user to override or confirm tags via input
-    if tags_input:
-        # If user entered new tags, split by comma
-        tags = [t.strip() for t in tags_input.split(",") if t.strip() != ""]
-
-    # Store in ChromaDB with a unique ID
-    doc_id = str(uuid.uuid4())
-    metadata = {"source": source, "tags": tags}
-    add_document(doc_id, content_text, metadata)
-
-    return content_text, summary, ", ".join(tags), f"Document stored with ID: {doc_id}"
-
-def generate_graph():
-    """
-    Create a simple Plotly graph of documents.
-    Nodes = documents, edges = shared tags.
-    """
-    # Fetch all documents from ChromaDB
-    from core.storage import get_all_documents
-    docs = get_all_documents()
-    if not docs:
-        return go.Figure()  # empty
-
-    # Build graph connections: if two docs share a tag, connect them
-    nodes = {doc["id"]: doc for doc in docs}
-    edges = []
-    for i, doc1 in enumerate(docs):
-        for doc2 in docs[i+1:]:
-            shared_tags = set(doc1["metadata"]["tags"]) & set(doc2["metadata"]["tags"])
-            if shared_tags:
-                edges.append((doc1["id"], doc2["id"]))
-
-    # Use networkx to compute layout (or simple fixed positions)
-    import networkx as nx
-    G = nx.Graph()
-    G.add_nodes_from(nodes.keys())
-    G.add_edges_from(edges)
-    pos = nx.spring_layout(G, seed=42)
-
-    # Create Plotly traces
-    edge_x = []
-    edge_y = []
-    for (src, dst) in edges:
-        x0, y0 = pos[src]
-        x1, y1 = pos[dst]
-        edge_x += [x0, x1, None]
-        edge_y += [y0, y1, None]
-    edge_trace = go.Scatter(
-        x=edge_x, y=edge_y,
-        line=dict(width=1, color='#888'),
-        hoverinfo='none',
-        mode='lines')
-
-    node_x = []
-    node_y = []
-    node_text = []
-    for node_id in G.nodes():
-        x, y = pos[node_id]
-        node_x.append(x)
-        node_y.append(y)
-        text = nodes[node_id]["metadata"].get("source", "")
-        node_text.append(f"{text}\nTags: {nodes[node_id]['metadata']['tags']}")
-
-    node_trace = go.Scatter(
-        x=node_x, y=node_y,
-        mode='markers+text',
-        marker=dict(size=10, color='skyblue'),
-        text=node_text, hoverinfo='text', textposition="bottom center")
-
-    fig = go.Figure(data=[edge_trace, node_trace],
-                    layout=go.Layout(title="Document Knowledge Graph",
-                                     showlegend=False,
-                                     margin=dict(l=20, r=20, b=20, t=30)))
-    return fig
-
-def handle_query(question):
-    """
-    Answer a user question by retrieving relevant documents and summarizing them.
-    """
-    if not question:
-        return "Please enter a question."
-
-    answer = answer_question(question)
-    return answer
-
-# Build Gradio interface with Blocks
-with gr.Blocks(title="Intelligent Content Organizer") as demo:
-    gr.Markdown("# Intelligent Content Organizer")
-    with gr.Tab("Upload / Fetch Content"):
-        gr.Markdown("**Add a document:** Upload a file or enter a URL.")
-        with gr.Row():
-            file_in = gr.File(label="Upload Document (PDF, TXT, etc.)")
-            url_in = gr.Textbox(label="Document URL", placeholder="https://example.com/article")
-        tags_in = gr.Textbox(label="Tags (comma-separated)", placeholder="Enter tags or leave blank")
-        process_btn = gr.Button("Parse & Add Document")
-        doc_view = gr.Textbox(label="Document Preview", lines=10, interactive=False)
-        summary_out = gr.Textbox(label="Summary", interactive=False)
-        tags_out = gr.Textbox(label="Detected Tags", interactive=False)
-        status_out = gr.Textbox(label="Status/Info", interactive=False)
-        process_btn.click(fn=process_content, inputs=[file_in, url_in, tags_in],
-                          outputs=[doc_view, summary_out, tags_out, status_out])
-
-    with gr.Tab("Knowledge Graph"):
-        gr.Markdown("**Document relationships:** Shared tags indicate edges.")
-        graph_plot = gr.Plot(label="Knowledge Graph")
-        refresh_btn = gr.Button("Refresh Graph")
-        refresh_btn.click(fn=generate_graph, inputs=None, outputs=graph_plot)
-
-    with gr.Tab("Ask a Question"):
-        gr.Markdown("**AI Q&A:** Ask a question about your documents.")
-        question_in = gr.Textbox(label="Your Question")
-        answer_out = gr.Textbox(label="Answer", interactive=False)
-        ask_btn = gr.Button("Get Answer")
-        ask_btn.click(fn=handle_query, inputs=question_in, outputs=answer_out)
-
+# Launch configuration
 if __name__ == "__main__":
-    # Launch Gradio app (Hugging Face Spaces will auto-launch this)
-    # demo.queue().launch(server_name="0.0.0.0", server_port=int(os.getenv("PORT", 7860)))
-    demo.launch(mcp_server=True)
+    # Check if running as MCP server
+    import sys
+    if "--mcp" in sys.argv:
+        # Run as MCP server
+        import asyncio
+        asyncio.run(mcp.run())
+    else:
+        # Run as Gradio app
+        demo.launch(
+            server_name="0.0.0.0",
+            share=False,
+            show_error=True
+        )

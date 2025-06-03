@@ -1,7 +1,124 @@
-# config.py
+# import os
+# from dotenv import load_dotenv
+
+# # Load environment variables
+# load_dotenv()
+
+# class Config:
+#     """Configuration management for API keys and settings"""
+    
+#     # API Keys (from environment variables)
+#     MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
+#     BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")
+#     UNSTRUCTURED_API_KEY = os.getenv("UNSTRUCTURED_API_KEY", "")
+#     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+    
+#     # ChromaDB Settings
+#     CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", "./chroma_db")
+#     CHROMA_COLLECTION_NAME = "knowledge_base"
+    
+#     # MCP Server Settings
+#     MCP_SERVER_NAME = "intelligent-content-organizer"
+#     MCP_SERVER_VERSION = "1.0.0"
+    
+#     # Processing Settings
+#     MAX_FILE_SIZE_MB = 50
+#     SUPPORTED_FILE_TYPES = [
+#         ".pdf", ".txt", ".docx", ".doc", ".html", ".md", 
+#         ".csv", ".json", ".xml", ".epub", ".rtf"
+#     ]
+    
+#     # Model Settings
+#     MISTRAL_MODEL = "mistral-small-latest"
+#     CLAUDE_MODEL = "claude-3-haiku-20240307"
+#     EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+    
+#     @classmethod
+#     def validate(cls):
+#         """Validate that all required API keys are set"""
+#         missing_keys = []
+#         if not cls.MISTRAL_API_KEY:
+#             missing_keys.append("MISTRAL_API_KEY")
+#         if not cls.BRAVE_API_KEY:
+#             missing_keys.append("BRAVE_API_KEY")
+#         if not cls.UNSTRUCTURED_API_KEY:
+#             missing_keys.append("UNSTRUCTURED_API_KEY")
+        
+#         if missing_keys:
+#             raise ValueError(f"Missing required API keys: {', '.join(missing_keys)}")
+        
+#         return True
+
+
 import os
 from dotenv import load_dotenv
-load_dotenv()  # loads from .env if present
-MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
-CLAUDE_API_KEY  = os.environ.get("CLAUDE_API_KEY")
-BRAVE_API_KEY   = os.environ.get("BRAVE_API_KEY")
+
+# Load environment variables
+load_dotenv()
+
+class Config:
+    """Configuration management for API keys and settings"""
+    
+    # API Keys - Only 2 needed, both with free tiers!
+    MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
+    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+    
+    # ChromaDB Settings (completely free local storage)
+    CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", "./chroma_db")
+    CHROMA_COLLECTION_NAME = "knowledge_base"
+    
+    # MCP Server Settings
+    MCP_SERVER_NAME = "intelligent-content-organizer"
+    MCP_SERVER_VERSION = "1.0.0"
+    MCP_SERVER_DESCRIPTION = "AI-powered knowledge management with automatic tagging and semantic search"
+    
+    # Processing Settings
+    MAX_FILE_SIZE_MB = 50
+    SUPPORTED_FILE_TYPES = [
+        ".pdf", ".txt", ".docx", ".doc", ".html", ".htm",
+        ".md", ".csv", ".json", ".xml", ".rtf"
+    ]
+    
+    # Model Settings
+    MISTRAL_MODEL = "mistral-small-latest"  # Free tier available
+    CLAUDE_MODEL = "claude-3-haiku-20240307"  # Free tier available
+    EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # Completely free
+    
+    # Feature Flags - Enable/disable based on API availability
+    USE_MISTRAL_FOR_TAGS = bool(MISTRAL_API_KEY)
+    USE_CLAUDE_FOR_SUMMARY = bool(ANTHROPIC_API_KEY)
+    
+    # Free alternatives settings
+    ENABLE_FREE_FALLBACKS = True  # Always use free methods when APIs fail
+    
+    @classmethod
+    def validate(cls):
+        """Validate configuration - now more flexible"""
+        warnings = []
+        
+        if not cls.MISTRAL_API_KEY:
+            warnings.append("MISTRAL_API_KEY not set - will use free tag generation")
+        
+        if not cls.ANTHROPIC_API_KEY:
+            warnings.append("ANTHROPIC_API_KEY not set - will use free summarization")
+        
+        if warnings:
+            print("⚠️  Configuration warnings:")
+            for warning in warnings:
+                print(f"   - {warning}")
+            print("\n✅ The app will still work using free alternatives!")
+        else:
+            print("✅ All API keys configured")
+        
+        return True
+    
+    @classmethod
+    def get_status(cls):
+        """Get configuration status for display"""
+        return {
+            "mistral_configured": bool(cls.MISTRAL_API_KEY),
+            "anthropic_configured": bool(cls.ANTHROPIC_API_KEY),
+            "free_fallbacks_enabled": cls.ENABLE_FREE_FALLBACKS,
+            "supported_formats": cls.SUPPORTED_FILE_TYPES,
+            "embedding_model": cls.EMBEDDING_MODEL
+        }
