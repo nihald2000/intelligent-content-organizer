@@ -532,7 +532,7 @@ def create_gradio_interface():
 
                         delete_doc_dropdown = gr.Dropdown(
                             label="Select Document to Delete",
-                            choices=[],  # initially empty
+                            choices=get_document_choices(),  # initially empty
                             value=None,
                             interactive=True,
                             allow_custom_value=False
