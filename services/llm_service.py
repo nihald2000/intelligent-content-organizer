@@ -2,7 +2,7 @@ import logging
 import asyncio
 from typing import List, Dict, Any, Optional
 import anthropic
-from mistralai.client import MistralClient
+from mistralai.client import Mistral
 import config
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class LLMService:
                 logger.info("Anthropic client initialized")
             
             if self.config.MISTRAL_API_KEY:
-                self.mistral_client = MistralClient(
+                self.mistral_client = Mistral(
                     api_key=self.config.MISTRAL_API_KEY
                 )
                 logger.info("Mistral client initialized")
