@@ -307,7 +307,7 @@ def get_document_choices():
 def upload_and_process_file(file):
     """Gradio interface for file upload"""
     if file is None:
-        return "No file uploaded", "", get_document_list(), gr.update(choices=get_document_choices())
+        return "No file uploaded", "", get_document_list(), gr.update(choices=get_document_choices()), gr.update(choices=get_document_choices()), gr.update(choices=get_document_choices()), gr.update(choices=get_document_choices())
     
     try:
         # Get file path
@@ -330,6 +330,7 @@ def upload_and_process_file(file):
                 doc_list,
                 gr.update(choices=doc_choices),
                 gr.update(choices=doc_choices),
+                gr.update(choices=doc_choices),
                 gr.update(choices=doc_choices)
             )
         else:
@@ -337,6 +338,7 @@ def upload_and_process_file(file):
                 f"❌ Error: {result.get('error', 'Unknown error')}", 
                 "", 
                 get_document_list(),
+                gr.update(choices=get_document_choices()),
                 gr.update(choices=get_document_choices()),
                 gr.update(choices=get_document_choices()),
                 gr.update(choices=get_document_choices())
@@ -347,6 +349,7 @@ def upload_and_process_file(file):
             f"❌ Error: {str(e)}", 
             "", 
             get_document_list(),
+            gr.update(choices=get_document_choices()),
             gr.update(choices=get_document_choices()),
             gr.update(choices=get_document_choices()),
             gr.update(choices=get_document_choices())
@@ -482,39 +485,48 @@ def ask_question(question):
         return f"❌ Error: {str(e)}"
 
 def delete_document_from_library(document_id):
-        """deleting a document from the library"""
-        try:
-            # Run the async delete_document method
-            result = mcp_server.run_async(mcp_server.document_store.delete_document(document_id))
-            if result:
-                msg = f"🗑️ Document {document_id[:8]}... deleted successfully."
-            else:
-                msg = f"❌ Failed to delete document {document_id[:8]}..."
-            # Refresh document list and choices
-            doc_list = get_document_list()
-            doc_choices = get_document_choices()
-            return msg, doc_list, gr.update(choices=doc_choices)
-        except Exception as e:
-            return f"❌ Error: {str(e)}", get_document_list(), gr.update(choices=get_document_choices())
+    """deleting a document from the library"""
+    try:
+        # Run the async delete_document method
+        result = mcp_server.run_async(mcp_server.document_store.delete_document(document_id))
+        if result:
+            msg = f"🗑️ Document {document_id[:8]}... deleted successfully."
+        else:
+            msg = f"❌ Failed to delete document {document_id[:8]}..."
+        # Refresh document list and choices
+        doc_list = get_document_list()
+        doc_choices = get_document_choices()
+        return msg, doc_list, gr.update(choices=doc_choices), gr.update(choices=doc_choices), gr.update(choices=doc_choices), gr.update(choices=doc_choices)
+    except Exception as e:
+        return f"❌ Error: {str(e)}", get_document_list(), gr.update(choices=get_document_choices()), gr.update(choices=get_document_choices()), gr.update(choices=get_document_choices()), gr.update(choices=get_document_choices())
 
-# Create Gradio Interface
+def refresh_library():
+    """Refresh the document library display"""
+    doc_list = get_document_list()
+    doc_choices = get_document_choices()
+    return doc_list, gr.update(choices=doc_choices), gr.update(choices=doc_choices), gr.update(choices=doc_choices), gr.update(choices=doc_choices)
+
 # Create Gradio Interface
 def create_gradio_interface():
     with gr.Blocks(title="🧠 Intelligent Content Organizer MCP Agent", theme=gr.themes.Soft()) as interface:
-        with gr.Row():
-            with gr.Column():
-                gr.Markdown("""
-                # 🧠 Intelligent Content Organizer MCP Agent
+        gr.Markdown("""
+        # 🧠 Intelligent Content Organizer MCP Agent
 
-                A powerful MCP (Model Context Protocol) server for intelligent content management with semantic search, 
-                summarization, and Q&A capabilities powered by Anthropic Claude and Mistral AI.
+        A powerful MCP (Model Context Protocol) server for intelligent content management with semantic search, 
+        summarization, and Q&A capabilities powered by Anthropic Claude and Mistral AI.
 
-                ## 🚀 Quick Start:
-                1. **Upload Documents** → Go to "📄 Upload Documents" tab  
-                2. **Search Your Content** → Use "🔍 Search Documents" to find information  
-                3. **Get Summaries** → Select any document in "📝 Summarize" tab  
-                4. **Ask Questions** → Get answers from your documents in "❓ Ask Questions" tab  
-                """)
+        ## 🚀 Quick Start:
+        1. **Upload Documents** → Go to "📄 Upload Documents" tab  
+        2. **Search Your Content** → Use "🔍 Search Documents" to find information  
+        3. **Get Summaries** → Select any document in "📝 Summarize" tab  
+        4. **Ask Questions** → Get answers from your documents in "❓ Ask Questions" tab  
+        """)
+
+        # State components for dropdowns
+        with gr.Row(visible=False):
+            doc_dropdown_sum = gr.Dropdown(label="Hidden", choices=get_document_choices())
+            doc_dropdown_tag = gr.Dropdown(label="Hidden", choices=get_document_choices())
+            delete_doc_dropdown = gr.Dropdown(label="Hidden", choices=get_document_choices())
 
         with gr.Tabs():
             # 📚 Document Library Tab
@@ -524,30 +536,31 @@ def create_gradio_interface():
                         gr.Markdown("### Your Document Collection")
                         document_list = gr.Textbox(
                             label="Documents in Library",
-                            value="",  # leave empty, filled on load
+                            value=get_document_list(),
                             lines=20,
                             interactive=False
                         )
                         refresh_btn = gr.Button("🔄 Refresh Library", variant="secondary")
 
-                        delete_doc_dropdown = gr.Dropdown(
+                        delete_doc_dropdown_visible = gr.Dropdown(
                             label="Select Document to Delete",
-                            choices=get_document_choices(),  # initially empty
+                            choices=get_document_choices(),
                             value=None,
                             interactive=True,
                             allow_custom_value=False
                         )
                         delete_btn = gr.Button("🗑️ Delete Selected Document", variant="stop")
+                        delete_output = gr.Textbox(label="Delete Status", visible=True)
 
                 refresh_btn.click(
-                    fn=get_document_list,
-                    outputs=[document_list]
+                    fn=refresh_library,
+                    outputs=[document_list, delete_doc_dropdown_visible, doc_dropdown_sum, doc_dropdown_tag, delete_doc_dropdown]
                 )
 
                 delete_btn.click(
                     delete_document_from_library,
-                    inputs=[delete_doc_dropdown],
-                    outputs=[document_list, delete_doc_dropdown]
+                    inputs=[delete_doc_dropdown_visible],
+                    outputs=[delete_output, document_list, delete_doc_dropdown_visible, doc_dropdown_sum, doc_dropdown_tag, delete_doc_dropdown]
                 )
 
             # 📄 Upload Documents Tab
@@ -575,7 +588,7 @@ def create_gradio_interface():
                 upload_btn.click(
                     upload_and_process_file,
                     inputs=[file_input],
-                    outputs=[upload_output, doc_id_output]
+                    outputs=[upload_output, doc_id_output, document_list, delete_doc_dropdown_visible, doc_dropdown_sum, doc_dropdown_tag, delete_doc_dropdown]
                 )
 
             # 🔍 Search Documents Tab
@@ -615,9 +628,9 @@ def create_gradio_interface():
                     with gr.Column():
                         gr.Markdown("### Generate Document Summaries")
 
-                        doc_dropdown_sum = gr.Dropdown(
+                        doc_dropdown_sum_visible = gr.Dropdown(
                             label="Select Document to Summarize",
-                            choices=[],  # empty initially
+                            choices=get_document_choices(),
                             value=None,
                             interactive=True,
                             allow_custom_value=False
@@ -646,7 +659,7 @@ def create_gradio_interface():
 
                 summarize_btn.click(
                     summarize_document,
-                    inputs=[doc_dropdown_sum, summary_text, summary_style],
+                    inputs=[doc_dropdown_sum_visible, summary_text, summary_style],
                     outputs=[summary_output]
                 )
 
@@ -656,9 +669,9 @@ def create_gradio_interface():
                     with gr.Column():
                         gr.Markdown("### Auto-Generate Document Tags")
 
-                        doc_dropdown_tag = gr.Dropdown(
+                        doc_dropdown_tag_visible = gr.Dropdown(
                             label="Select Document to Tag",
-                            choices=[],  
+                            choices=get_document_choices(),
                             value=None,
                             interactive=True,
                             allow_custom_value=False
@@ -688,7 +701,7 @@ def create_gradio_interface():
 
                 tag_btn.click(
                     generate_tags_for_document,
-                    inputs=[doc_dropdown_tag, tag_text, max_tags],
+                    inputs=[doc_dropdown_tag_visible, tag_text, max_tags],
                     outputs=[tag_output]
                 )
 
@@ -722,24 +735,32 @@ def create_gradio_interface():
                     outputs=[qa_output]
                 )
 
-        # ✅ Auto-refresh all dropdowns when the app loads
-        interface.load(
-            fn=lambda: (
-                get_document_list(),
-                get_document_choices(),  # for summarize tab
-                get_document_choices(),  # for tag tab
-                get_document_choices()   # for delete dropdown
-            ),
-            outputs=[
-                document_list,
-                doc_dropdown_sum,
-                doc_dropdown_tag,
-                delete_doc_dropdown
-            ]
+        # Update hidden dropdowns when visible ones change
+        doc_dropdown_sum_visible.change(
+            lambda x: x,
+            inputs=[doc_dropdown_sum_visible],
+            outputs=[doc_dropdown_sum]
+        )
+        
+        doc_dropdown_tag_visible.change(
+            lambda x: x,
+            inputs=[doc_dropdown_tag_visible],
+            outputs=[doc_dropdown_tag]
+        )
+        
+        delete_doc_dropdown_visible.change(
+            lambda x: x,
+            inputs=[delete_doc_dropdown_visible],
+            outputs=[delete_doc_dropdown]
         )
 
-        return interface
-        
+        # Auto-refresh dropdowns when the app loads
+        interface.load(
+            fn=refresh_library,
+            outputs=[document_list, delete_doc_dropdown_visible, doc_dropdown_sum_visible, doc_dropdown_tag_visible, delete_doc_dropdown]
+        )
+
+        return interface           
 
 # Create and launch the interface
 if __name__ == "__main__":
