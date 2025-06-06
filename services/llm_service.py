@@ -2,7 +2,7 @@ import logging
 import asyncio
 from typing import List, Dict, Any, Optional
 import anthropic
-from mistralai.client import Mistral
+from mistralai import Mistral
 import config
 
 logger = logging.getLogger(__name__)
