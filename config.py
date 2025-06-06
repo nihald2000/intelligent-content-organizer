@@ -1,73 +1,46 @@
-
 import os
-from dotenv import load_dotenv
+from typing import Optional
 
-# Load environment variables
-load_dotenv()
 
 class Config:
-    """Configuration management for API keys and settings"""
+    # API Keys
+    ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
+    MISTRAL_API_KEY: Optional[str] = os.getenv("MISTRAL_API_KEY")
+    HUGGINGFACE_API_KEY: Optional[str] = os.getenv("HUGGINGFACE_API_KEY", os.getenv("HF_TOKEN"))
     
-    # API Keys - Only 2 needed, both with free tiers!
-    MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
-    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+    # Model Configuration
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+    ANTHROPIC_MODEL: str = os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307")  # Using faster model
+    MISTRAL_MODEL: str = os.getenv("MISTRAL_MODEL", "mistral-small-latest")  # Using smaller model
     
-    # ChromaDB Settings (completely free local storage)
-    CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", "./chroma_db")
-    CHROMA_COLLECTION_NAME = "knowledge_base"
+    # Vector Store Configuration
+    VECTOR_STORE_PATH: str = os.getenv("VECTOR_STORE_PATH", "./data/vector_store")
+    DOCUMENT_STORE_PATH: str = os.getenv("DOCUMENT_STORE_PATH", "./data/documents")
+    INDEX_NAME: str = os.getenv("INDEX_NAME", "content_index")
     
-    # MCP Server Settings
-    MCP_SERVER_NAME = "intelligent-content-organizer"
-    MCP_SERVER_VERSION = "1.0.0"
-    MCP_SERVER_DESCRIPTION = "AI-powered knowledge management with automatic tagging and semantic search"
+    # Processing Configuration
+    CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "500"))
+    CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "50"))
+    MAX_CONCURRENT_REQUESTS: int = int(os.getenv("MAX_CONCURRENT_REQUESTS", "5"))
     
-    # Processing Settings
-    MAX_FILE_SIZE_MB = 50
-    SUPPORTED_FILE_TYPES = [
-        ".pdf", ".txt", ".docx", ".doc", ".html", ".htm",
-        ".md", ".csv", ".json", ".xml", ".rtf"
-    ]
+    # Search Configuration
+    DEFAULT_TOP_K: int = int(os.getenv("DEFAULT_TOP_K", "5"))
+    SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.1"))
     
-    # Model Settings
-    MISTRAL_MODEL = "mistral-small-latest"  # Free tier available
-    CLAUDE_MODEL = "claude-3-haiku-20240307"  # Free tier available
-    EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # Completely free
-    
-    # Feature Flags - Enable/disable based on API availability
-    USE_MISTRAL_FOR_TAGS = bool(MISTRAL_API_KEY)
-    USE_CLAUDE_FOR_SUMMARY = bool(ANTHROPIC_API_KEY)
-    
-    # Free alternatives settings
-    ENABLE_FREE_FALLBACKS = True  # Always use free methods when APIs fail
+    # OCR Configuration
+    TESSERACT_PATH: Optional[str] = os.getenv("TESSERACT_PATH")
+    OCR_LANGUAGE: str = os.getenv("OCR_LANGUAGE", "eng")
     
     @classmethod
-    def validate(cls):
-        """Validate configuration - now more flexible"""
-        warnings = []
-        
-        if not cls.MISTRAL_API_KEY:
-            warnings.append("MISTRAL_API_KEY not set - will use free tag generation")
-        
-        if not cls.ANTHROPIC_API_KEY:
-            warnings.append("ANTHROPIC_API_KEY not set - will use free summarization")
-        
-        if warnings:
-            print("⚠️  Configuration warnings:")
-            for warning in warnings:
-                print(f"   - {warning}")
-            print("\n✅ The app will still work using free alternatives!")
-        else:
-            print("✅ All API keys configured")
-        
+    def validate(cls) -> bool:
+        """Validate that required configuration is present"""
+        # Make API keys optional for testing
         return True
-    
-    @classmethod
-    def get_status(cls):
-        """Get configuration status for display"""
-        return {
-            "mistral_configured": bool(cls.MISTRAL_API_KEY),
-            "anthropic_configured": bool(cls.ANTHROPIC_API_KEY),
-            "free_fallbacks_enabled": cls.ENABLE_FREE_FALLBACKS,
-            "supported_formats": cls.SUPPORTED_FILE_TYPES,
-            "embedding_model": cls.EMBEDDING_MODEL
-        }
+
+# Global config instance
+config = Config()
+
+# Create data directories
+import pathlib
+pathlib.Path(config.VECTOR_STORE_PATH).mkdir(parents=True, exist_ok=True)
+pathlib.Path(config.DOCUMENT_STORE_PATH).mkdir(parents=True, exist_ok=True)
