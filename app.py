@@ -498,20 +498,23 @@ def delete_document_from_library(document_id):
             return f"❌ Error: {str(e)}", get_document_list(), gr.update(choices=get_document_choices())
 
 # Create Gradio Interface
+# Create Gradio Interface
 def create_gradio_interface():
     with gr.Blocks(title="🧠 Intelligent Content Organizer MCP Agent", theme=gr.themes.Soft()) as interface:
-        gr.Markdown("""
-        # 🧠 Intelligent Content Organizer MCP Agent
+        with gr.Row():
+            with gr.Column():
+                gr.Markdown("""
+                # 🧠 Intelligent Content Organizer MCP Agent
 
-        A powerful MCP (Model Context Protocol) server for intelligent content management with semantic search, 
-        summarization, and Q&A capabilities powered by Anthropic Claude and Mistral AI.
+                A powerful MCP (Model Context Protocol) server for intelligent content management with semantic search, 
+                summarization, and Q&A capabilities powered by Anthropic Claude and Mistral AI.
 
-        ## 🚀 Quick Start:
-        1. **Upload Documents** → Go to "📄 Upload Documents" tab  
-        2. **Search Your Content** → Use "🔍 Search Documents" to find information  
-        3. **Get Summaries** → Select any document in "📝 Summarize" tab  
-        4. **Ask Questions** → Get answers from your documents in "❓ Ask Questions" tab  
-        """)
+                ## 🚀 Quick Start:
+                1. **Upload Documents** → Go to "📄 Upload Documents" tab  
+                2. **Search Your Content** → Use "🔍 Search Documents" to find information  
+                3. **Get Summaries** → Select any document in "📝 Summarize" tab  
+                4. **Ask Questions** → Get answers from your documents in "❓ Ask Questions" tab  
+                """)
 
         with gr.Tabs():
             # 📚 Document Library Tab
@@ -521,7 +524,7 @@ def create_gradio_interface():
                         gr.Markdown("### Your Document Collection")
                         document_list = gr.Textbox(
                             label="Documents in Library",
-                            value=get_document_list(),
+                            value="",  # leave empty, filled on load
                             lines=20,
                             interactive=False
                         )
@@ -529,7 +532,7 @@ def create_gradio_interface():
 
                         delete_doc_dropdown = gr.Dropdown(
                             label="Select Document to Delete",
-                            choices=get_document_choices(),
+                            choices=[],  # initially empty
                             value=None,
                             interactive=True,
                             allow_custom_value=False
@@ -614,7 +617,7 @@ def create_gradio_interface():
 
                         doc_dropdown_sum = gr.Dropdown(
                             label="Select Document to Summarize",
-                            choices=get_document_choices(),
+                            choices=[],  # empty initially
                             value=None,
                             interactive=True,
                             allow_custom_value=False
@@ -655,7 +658,7 @@ def create_gradio_interface():
 
                         doc_dropdown_tag = gr.Dropdown(
                             label="Select Document to Tag",
-                            choices=get_document_choices(),
+                            choices=[],  
                             value=None,
                             interactive=True,
                             allow_custom_value=False
@@ -719,17 +722,24 @@ def create_gradio_interface():
                     outputs=[qa_output]
                 )
 
-        # Auto-refresh dropdowns when the app loads
+        # ✅ Auto-refresh all dropdowns when the app loads
         interface.load(
             fn=lambda: (
                 get_document_list(),
-                get_document_choices(),
-                get_document_choices()
+                get_document_choices(),  # for summarize tab
+                get_document_choices(),  # for tag tab
+                get_document_choices()   # for delete dropdown
             ),
-            outputs=[document_list, doc_dropdown_sum, doc_dropdown_tag]
+            outputs=[
+                document_list,
+                doc_dropdown_sum,
+                doc_dropdown_tag,
+                delete_doc_dropdown
+            ]
         )
 
-        return interface           
+        return interface
+        
 
 # Create and launch the interface
 if __name__ == "__main__":
