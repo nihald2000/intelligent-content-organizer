@@ -1,6 +1,6 @@
 gradio>=4.0.0
 anthropic>=0.7.0
-mistralai>=0.0.8
+mistralai>=0.4.2
 sentence-transformers>=2.2.2
 transformers>=4.30.0
 torch>=2.0.0
