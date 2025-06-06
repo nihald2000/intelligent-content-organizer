@@ -111,7 +111,7 @@ class ContentOrganizerMCPServer:
                 "error": str(e),
                 "message": "Failed to process document"
             }
-
+    
     async def get_document_content_async(self, document_id: str) -> Optional[str]:
         """Get document content by ID"""
         try:
@@ -457,22 +457,6 @@ def generate_tags_for_document(doc_choice, custom_text, max_tags):
         logger.error(f"Tag generation error: {str(e)}")
         return f"❌ Error: {str(e)}"
 
-def delete_document_from_library(document_id):
-        """deleting a document from the library"""
-        try:
-            # Run the async delete_document method
-            result = mcp_server.run_async(mcp_server.document_store.delete_document(document_id))
-            if result:
-                msg = f"🗑️ Document {document_id[:8]}... deleted successfully."
-            else:
-                msg = f"❌ Failed to delete document {document_id[:8]}..."
-            # Refresh document list and choices
-            doc_list = get_document_list()
-            doc_choices = get_document_choices()
-            return msg, doc_list, gr.update(choices=doc_choices)
-        except Exception as e:
-            return f"❌ Error: {str(e)}", get_document_list(), gr.update(choices=get_document_choices())
-
 def ask_question(question):
     """Gradio interface for Q&A"""
     if not question.strip():
@@ -497,28 +481,40 @@ def ask_question(question):
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
+def delete_document_from_library(document_id):
+        """deleting a document from the library"""
+        try:
+            # Run the async delete_document method
+            result = mcp_server.run_async(mcp_server.document_store.delete_document(document_id))
+            if result:
+                msg = f"🗑️ Document {document_id[:8]}... deleted successfully."
+            else:
+                msg = f"❌ Failed to delete document {document_id[:8]}..."
+            # Refresh document list and choices
+            doc_list = get_document_list()
+            doc_choices = get_document_choices()
+            return msg, doc_list, gr.update(choices=doc_choices)
+        except Exception as e:
+            return f"❌ Error: {str(e)}", get_document_list(), gr.update(choices=get_document_choices())
+
 # Create Gradio Interface
 def create_gradio_interface():
     with gr.Blocks(title="🧠 Intelligent Content Organizer MCP Agent", theme=gr.themes.Soft()) as interface:
         gr.Markdown("""
         # 🧠 Intelligent Content Organizer MCP Agent
-        
+
         A powerful MCP (Model Context Protocol) server for intelligent content management with semantic search, 
         summarization, and Q&A capabilities powered by Anthropic Claude and Mistral AI.
-        
+
         ## 🚀 Quick Start:
-        1. **Upload Documents** → Go to "📄 Upload Documents" tab
-        2. **Search Your Content** → Use "🔍 Search Documents" to find information
-        3. **Get Summaries** → Select any document in "📝 Summarize" tab
-        4. **Ask Questions** → Get answers from your documents in "❓ Ask Questions" tab
-        
+        1. **Upload Documents** → Go to "📄 Upload Documents" tab  
+        2. **Search Your Content** → Use "🔍 Search Documents" to find information  
+        3. **Get Summaries** → Select any document in "📝 Summarize" tab  
+        4. **Ask Questions** → Get answers from your documents in "❓ Ask Questions" tab  
         """)
-        
-        # Shared components for document selection
-        doc_choices = gr.State(get_document_choices())
-        
+
         with gr.Tabs():
-            # Document Library Tab
+            # 📚 Document Library Tab
             with gr.Tab("📚 Document Library"):
                 with gr.Row():
                     with gr.Column():
@@ -530,26 +526,28 @@ def create_gradio_interface():
                             interactive=False
                         )
                         refresh_btn = gr.Button("🔄 Refresh Library", variant="secondary")
-                
+
+                        delete_doc_dropdown = gr.Dropdown(
+                            label="Select Document to Delete",
+                            choices=get_document_choices(),
+                            value=None,
+                            interactive=True,
+                            allow_custom_value=False
+                        )
+                        delete_btn = gr.Button("🗑️ Delete Selected Document", variant="stop")
+
                 refresh_btn.click(
                     fn=get_document_list,
                     outputs=[document_list]
                 )
-                delete_doc_dropdown = gr.Dropdown(
-                label="Select Document to Delete",
-                choices=get_document_choices(),
-                value=None,
-                interactive=True,
-                allow_custom_value=False
-            )
-            delete_btn = gr.Button("🗑️ Delete Selected Document", variant="stop")
-            delete_btn.click(
-                delete_document_from_library,
-                inputs=[delete_doc_dropdown],
-                outputs=[document_list, document_list, delete_doc_dropdown]
-            )
-            
-            # Document Ingestion Tab
+
+                delete_btn.click(
+                    delete_document_from_library,
+                    inputs=[delete_doc_dropdown],
+                    outputs=[document_list, delete_doc_dropdown]
+                )
+
+            # 📄 Upload Documents Tab
             with gr.Tab("📄 Upload Documents"):
                 with gr.Row():
                     with gr.Column():
@@ -570,25 +568,21 @@ def create_gradio_interface():
                             label="Document ID",
                             placeholder="Document ID will appear here after processing..."
                         )
-                        
-                # Hidden dropdowns for updating
-                doc_dropdown_sum = gr.Dropdown(label="Hidden", visible=False)
-                doc_dropdown_tag = gr.Dropdown(label="Hidden", visible=False)
-                
+
                 upload_btn.click(
                     upload_and_process_file,
                     inputs=[file_input],
-                    outputs=[upload_output, doc_id_output, document_list, doc_dropdown_sum, doc_dropdown_tag, doc_choices]
+                    outputs=[upload_output, doc_id_output]
                 )
-            
-            # Semantic Search Tab
+
+            # 🔍 Search Documents Tab
             with gr.Tab("🔍 Search Documents"):
                 with gr.Row():
                     with gr.Column(scale=1):
                         gr.Markdown("### Search Your Document Library")
                         search_query = gr.Textbox(
                             label="What are you looking for?",
-                            placeholder="Enter your search query... (e.g., 'machine learning algorithms', 'quarterly revenue', 'project timeline')",
+                            placeholder="Enter your search query...",
                             lines=2
                         )
                         search_top_k = gr.Slider(
@@ -605,35 +599,33 @@ def create_gradio_interface():
                             lines=20,
                             placeholder="Search results will appear here..."
                         )
-                
+
                 search_btn.click(
                     perform_search,
                     inputs=[search_query, search_top_k],
                     outputs=[search_output]
                 )
-            
-            # Summarization Tab
+
+            # 📝 Summarize Tab
             with gr.Tab("📝 Summarize"):
                 with gr.Row():
                     with gr.Column():
                         gr.Markdown("### Generate Document Summaries")
-                        
-                        with gr.Tab("From Library"):
-                            doc_dropdown_sum = gr.Dropdown(
-                                label="Select Document to Summarize",
-                                choices=get_document_choices(),
-                                value=None,
-                                interactive=True,
-                                allow_custom_value=False
-                            )
-                        
-                        with gr.Tab("Custom Text"):
-                            summary_text = gr.Textbox(
-                                label="Or Paste Text to Summarize",
-                                placeholder="Paste any text here to summarize...",
-                                lines=8
-                            )
-                        
+
+                        doc_dropdown_sum = gr.Dropdown(
+                            label="Select Document to Summarize",
+                            choices=get_document_choices(),
+                            value=None,
+                            interactive=True,
+                            allow_custom_value=False
+                        )
+
+                        summary_text = gr.Textbox(
+                            label="Or Paste Text to Summarize",
+                            placeholder="Paste any text here to summarize...",
+                            lines=8
+                        )
+
                         summary_style = gr.Dropdown(
                             label="Summary Style",
                             choices=["concise", "detailed", "bullet_points", "executive"],
@@ -641,42 +633,40 @@ def create_gradio_interface():
                             info="Choose how you want the summary formatted"
                         )
                         summarize_btn = gr.Button("📝 Generate Summary", variant="primary", size="lg")
-                    
+
                     with gr.Column():
                         summary_output = gr.Textbox(
                             label="Generated Summary",
                             lines=20,
                             placeholder="Summary will appear here..."
                         )
-                
+
                 summarize_btn.click(
                     summarize_document,
                     inputs=[doc_dropdown_sum, summary_text, summary_style],
                     outputs=[summary_output]
                 )
-            
-            # Tag Generation Tab
+
+            # 🏷️ Generate Tags Tab
             with gr.Tab("🏷️ Generate Tags"):
                 with gr.Row():
                     with gr.Column():
                         gr.Markdown("### Auto-Generate Document Tags")
-                        
-                        with gr.Tab("From Library"):
-                            doc_dropdown_tag = gr.Dropdown(
-                                label="Select Document to Tag",
-                                choices=get_document_choices(),
-                                value=None,
-                                interactive=True,
-                                allow_custom_value=False
-                            )
-                        
-                        with gr.Tab("Custom Text"):
-                            tag_text = gr.Textbox(
-                                label="Or Paste Text to Generate Tags",
-                                placeholder="Paste any text here to generate tags...",
-                                lines=8
-                            )
-                        
+
+                        doc_dropdown_tag = gr.Dropdown(
+                            label="Select Document to Tag",
+                            choices=get_document_choices(),
+                            value=None,
+                            interactive=True,
+                            allow_custom_value=False
+                        )
+
+                        tag_text = gr.Textbox(
+                            label="Or Paste Text to Generate Tags",
+                            placeholder="Paste any text here to generate tags...",
+                            lines=8
+                        )
+
                         max_tags = gr.Slider(
                             label="Number of Tags",
                             minimum=3,
@@ -685,57 +675,61 @@ def create_gradio_interface():
                             step=1
                         )
                         tag_btn = gr.Button("🏷️ Generate Tags", variant="primary", size="lg")
-                    
+
                     with gr.Column():
                         tag_output = gr.Textbox(
                             label="Generated Tags",
                             lines=10,
                             placeholder="Tags will appear here..."
                         )
-                
+
                 tag_btn.click(
                     generate_tags_for_document,
                     inputs=[doc_dropdown_tag, tag_text, max_tags],
                     outputs=[tag_output]
                 )
-            
-            # Q&A Tab
+
+            # ❓ Ask Questions Tab
             with gr.Tab("❓ Ask Questions"):
                 with gr.Row():
                     with gr.Column():
                         gr.Markdown("""
                         ### Ask Questions About Your Documents
-                        
+
                         The AI will search through all your uploaded documents to find relevant information 
                         and provide comprehensive answers with sources.
                         """)
                         qa_question = gr.Textbox(
                             label="Your Question",
-                            placeholder="Ask anything about your documents... (e.g., 'What are the key findings about renewable energy?', 'How much was spent on marketing last quarter?')",
+                            placeholder="Ask anything about your documents...",
                             lines=3
                         )
                         qa_btn = gr.Button("❓ Get Answer", variant="primary", size="lg")
-                    
+
                     with gr.Column():
                         qa_output = gr.Textbox(
                             label="AI Answer",
                             lines=20,
                             placeholder="Answer will appear here with sources..."
                         )
-                
+
                 qa_btn.click(
                     ask_question,
                     inputs=[qa_question],
                     outputs=[qa_output]
                 )
-        
-        # Auto-refresh document lists when switching tabs
+
+        # Auto-refresh dropdowns when the app loads
         interface.load(
-            fn=lambda: (get_document_list(), get_document_choices(), get_document_choices()),
+            fn=lambda: (
+                get_document_list(),
+                get_document_choices(),
+                get_document_choices()
+            ),
             outputs=[document_list, doc_dropdown_sum, doc_dropdown_tag]
         )
-        
-        return interface
+
+        return interface           
 
 # Create and launch the interface
 if __name__ == "__main__":
