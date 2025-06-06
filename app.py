@@ -457,6 +457,22 @@ def generate_tags_for_document(doc_choice, custom_text, max_tags):
         logger.error(f"Tag generation error: {str(e)}")
         return f"❌ Error: {str(e)}"
 
+def delete_document_from_library(document_id):
+        """deleting a document from the library"""
+        try:
+            # Run the async delete_document method
+            result = mcp_server.run_async(mcp_server.document_store.delete_document(document_id))
+            if result:
+                msg = f"🗑️ Document {document_id[:8]}... deleted successfully."
+            else:
+                msg = f"❌ Failed to delete document {document_id[:8]}..."
+            # Refresh document list and choices
+            doc_list = get_document_list()
+            doc_choices = get_document_choices()
+            return msg, doc_list, gr.update(choices=doc_choices)
+        except Exception as e:
+            return f"❌ Error: {str(e)}", get_document_list(), gr.update(choices=get_document_choices())
+
 def ask_question(question):
     """Gradio interface for Q&A"""
     if not question.strip():
@@ -519,6 +535,19 @@ def create_gradio_interface():
                     fn=get_document_list,
                     outputs=[document_list]
                 )
+                delete_doc_dropdown = gr.Dropdown(
+                label="Select Document to Delete",
+                choices=get_document_choices(),
+                value=None,
+                interactive=True,
+                allow_custom_value=False
+            )
+            delete_btn = gr.Button("🗑️ Delete Selected Document", variant="stop")
+            delete_btn.click(
+                delete_document_from_library,
+                inputs=[delete_doc_dropdown],
+                outputs=[document_list, document_list, delete_doc_dropdown]
+            )
             
             # Document Ingestion Tab
             with gr.Tab("📄 Upload Documents"):
