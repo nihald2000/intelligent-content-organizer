@@ -1,324 +1,288 @@
+
 import logging
-from typing import Optional, List, Dict, Any
 import asyncio
 from pathlib import Path
-import tempfile
 import os
+import base64 # For encoding files
+from typing import Optional, List, Dict, Any
+import json 
 
-from PIL import Image
-import pytesseract
-import config
+from mistralai import Mistral
+from mistralai.models import SDKError
+# PIL (Pillow) for dummy image creation in main_example
+from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
 class OCRService:
     def __init__(self):
-        self.config = config.config
+        self.api_key = os.environ.get("MISTRAL_API_KEY")
+        if not self.api_key:
+            logger.error("MISTRAL_API_KEY environment variable not set.")
+            raise ValueError("MISTRAL_API_KEY not found in environment variables.")
         
-        # Configure Tesseract path if specified
-        if self.config.TESSERACT_PATH:
-            pytesseract.pytesseract.tesseract_cmd = self.config.TESSERACT_PATH
-        
-        self.language = self.config.OCR_LANGUAGE
-        
-        # Test OCR availability
-        self._test_ocr_availability()
-    
-    def _test_ocr_availability(self):
-        """Test if OCR is available and working"""
+        self.client = Mistral(api_key=self.api_key)
+        self.ocr_model_name = "mistral-ocr-latest"
+        self.language = 'eng'
+        logger.info(f"OCRService (using Mistral AI model {self.ocr_model_name}) initialized.")
+
+    def _encode_file_to_base64(self, file_path: str) -> Optional[str]:
         try:
-            # Create a simple test image
-            test_image = Image.new('RGB', (100, 30), color='white')
-            pytesseract.image_to_string(test_image)
-            logger.info("OCR service initialized successfully")
+            with open(file_path, "rb") as file_to_encode:
+                return base64.b64encode(file_to_encode.read()).decode('utf-8')
+        except FileNotFoundError:
+            logger.error(f"Error: The file {file_path} was not found for Base64 encoding.")
+            return None
         except Exception as e:
-            logger.warning(f"OCR may not be available: {str(e)}")
-    
-    async def extract_text_from_image(self, image_path: str, language: Optional[str] = None) -> str:
-        """Extract text from an image file"""
-        try:
-            # Use specified language or default
-            lang = language or self.language
-            
-            # Load image
-            image = Image.open(image_path)
-            
-            # Perform OCR in thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
-            text = await loop.run_in_executor(
-                None,
-                self._extract_text_sync,
-                image,
-                lang
-            )
-            
-            return text.strip()
-            
-        except Exception as e:
-            logger.error(f"Error extracting text from image {image_path}: {str(e)}")
+            logger.error(f"Error during Base64 encoding for {file_path}: {e}")
+            return None
+
+    # In OCRService class:
+
+    async def _process_file_with_mistral(self, file_path: str, mime_type: str) -> str:
+        file_name = Path(file_path).name
+        logger.info(f"Preparing to process file: {file_name} (MIME: {mime_type}) with Mistral OCR.")
+
+        base64_encoded_file = self._encode_file_to_base64(file_path)
+        if not base64_encoded_file:
+            logger.warning(f"Base64 encoding failed for {file_name}, cannot process.")
             return ""
-    
-    def _extract_text_sync(self, image: Image.Image, language: str) -> str:
-        """Synchronous text extraction"""
+
+        document_type = "image_url" if mime_type.startswith("image/") else "document_url"
+        uri_key = "image_url" if document_type == "image_url" else "document_url"
+        data_uri = f"data:{mime_type};base64,{base64_encoded_file}"
+        
+        document_payload = {
+            "type": document_type,
+            uri_key: data_uri
+        }
         try:
-            # Optimize image for OCR
-            processed_image = self._preprocess_image(image)
-            
-            # Configure OCR
-            config_string = '--psm 6'  # Assume a single uniform block of text
-            
-            # Extract text
-            text = pytesseract.image_to_string(
-                processed_image,
-                lang=language,
-                config=config_string
-            )
-            
-            return text
-        except Exception as e:
-            logger.error(f"Error in synchronous OCR: {str(e)}")
-            return ""
-    
-    def _preprocess_image(self, image: Image.Image) -> Image.Image:
-        """Preprocess image to improve OCR accuracy"""
-        try:
-            # Convert to grayscale if not already
-            if image.mode != 'L':
-                image = image.convert('L')
-            
-            # Resize image if too small (OCR works better on larger images)
-            width, height = image.size
-            if width < 300 or height < 300:
-                scale_factor = max(300 / width, 300 / height)
-                new_width = int(width * scale_factor)
-                new_height = int(height * scale_factor)
-                image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            
-            return image
-        except Exception as e:
-            logger.error(f"Error preprocessing image: {str(e)}")
-            return image
-    
-    async def extract_text_from_pdf_images(self, pdf_path: str) -> List[str]:
-        """Extract text from PDF by converting pages to images and running OCR"""
-        try:
-            import fitz  # PyMuPDF
-            
-            texts = []
-            
-            # Open PDF
-            pdf_document = fitz.open(pdf_path)
-            
-            for page_num in range(len(pdf_document)):
-                try:
-                    # Get page
-                    page = pdf_document[page_num]
-                    
-                    # Convert page to image
-                    mat = fitz.Matrix(2.0, 2.0)  # Scale factor for better quality
-                    pix = page.get_pixmap(matrix=mat)
-                    img_data = pix.tobytes("ppm")
-                    
-                    # Create PIL image from bytes
-                    with tempfile.NamedTemporaryFile(suffix='.ppm', delete=False) as tmp_file:
-                        tmp_file.write(img_data)
-                        tmp_file.flush()
-                        
-                        # Extract text from image
-                        page_text = await self.extract_text_from_image(tmp_file.name)
-                        texts.append(page_text)
-                        
-                        # Clean up temporary file
-                        os.unlink(tmp_file.name)
-                
-                except Exception as e:
-                    logger.warning(f"Error processing PDF page {page_num}: {str(e)}")
-                    texts.append("")
-            
-            pdf_document.close()
-            return texts
-            
-        except ImportError:
-            logger.error("PyMuPDF not available for PDF OCR")
-            return []
-        except Exception as e:
-            logger.error(f"Error extracting text from PDF images: {str(e)}")
-            return []
-    
-    async def extract_text_with_confidence(self, image_path: str, min_confidence: float = 0.5) -> Dict[str, Any]:
-        """Extract text with confidence scores"""
-        try:
-            image = Image.open(image_path)
-            
-            # Get detailed OCR data with confidence scores
+            logger.info(f"Calling Mistral client.ocr.process for {file_name} with model {self.ocr_model_name}.")
             loop = asyncio.get_event_loop()
-            ocr_data = await loop.run_in_executor(
-                None,
-                self._extract_detailed_data,
-                image
-            )
             
-            # Filter by confidence
-            filtered_text = []
-            word_confidences = []
-            
-            for i, confidence in enumerate(ocr_data.get('conf', [])):
-                if confidence > min_confidence * 100:  # Tesseract uses 0-100 scale
-                    text = ocr_data.get('text', [])[i]
-                    if text.strip():
-                        filtered_text.append(text)
-                        word_confidences.append(confidence / 100.0)  # Convert to 0-1 scale
-            
-            return {
-                "text": " ".join(filtered_text),
-                "confidence": sum(word_confidences) / len(word_confidences) if word_confidences else 0.0,
-                "word_count": len(filtered_text),
-                "raw_data": ocr_data
-            }
-            
-        except Exception as e:
-            logger.error(f"Error extracting text with confidence: {str(e)}")
-            return {
-                "text": "",
-                "confidence": 0.0,
-                "word_count": 0,
-                "error": str(e)
-            }
-    
-    def _extract_detailed_data(self, image: Image.Image) -> Dict[str, Any]:
-        """Extract detailed OCR data with positions and confidence"""
-        try:
-            processed_image = self._preprocess_image(image)
-            
-            # Get detailed data
-            data = pytesseract.image_to_data(
-                processed_image,
-                lang=self.language,
-                config='--psm 6',
-                output_type=pytesseract.Output.DICT
-            )
-            
-            return data
-        except Exception as e:
-            logger.error(f"Error extracting detailed OCR data: {str(e)}")
-            return {}
-    
-    async def detect_language(self, image_path: str) -> str:
-        """Detect the language of text in an image"""
-        try:
-            image = Image.open(image_path)
-            
-            # Run language detection
-            loop = asyncio.get_event_loop()
-            languages = await loop.run_in_executor(
-                None,
-                pytesseract.image_to_osd,
-                image
-            )
-            
-            # Parse the output to get the language
-            for line in languages.split('\n'):
-                if 'Script:' in line:
-                    script = line.split(':')[1].strip()
-                    # Map script to language code
-                    script_to_lang = {
-                        'Latin': 'eng',
-                        'Arabic': 'ara',
-                        'Chinese': 'chi_sim',
-                        'Japanese': 'jpn',
-                        'Korean': 'kor'
-                    }
-                    return script_to_lang.get(script, 'eng')
-            
-            return 'eng'  # Default to English
-            
-        except Exception as e:
-            logger.error(f"Error detecting language: {str(e)}")
-            return 'eng'
-    
-    async def extract_tables_from_image(self, image_path: str) -> List[List[str]]:
-        """Extract table data from an image"""
-        try:
-            # This is a basic implementation
-            # For better table extraction, consider using specialized libraries like table-transformer
-            
-            image = Image.open(image_path)
-            
-            # Use specific PSM for tables
-            loop = asyncio.get_event_loop()
-            text = await loop.run_in_executor(
-                None,
-                lambda: pytesseract.image_to_string(
-                    image,
-                    lang=self.language,
-                    config='--psm 6 -c preserve_interword_spaces=1'
+            ocr_response = await loop.run_in_executor(
+                None, 
+                lambda: self.client.ocr.process(
+                    model=self.ocr_model_name,
+                    document=document_payload,
+                    include_image_base64=False 
                 )
             )
             
-            # Simple table parsing (assumes space/tab separated)
-            lines = text.split('\n')
-            table_data = []
+            logger.info(f"Received OCR response for {file_name}. Type: {type(ocr_response)}")
+
+            extracted_markdown = ""
+            if hasattr(ocr_response, 'pages') and ocr_response.pages and isinstance(ocr_response.pages, list):
+                all_pages_markdown = []
+                for i, page in enumerate(ocr_response.pages):
+                    page_content = None
+                    if hasattr(page, 'markdown') and page.markdown: # Check for 'markdown' attribute
+                        page_content = page.markdown
+                        logger.debug(f"Extracted content from page {i} using 'page.markdown'.")
+                    elif hasattr(page, 'markdown_content') and page.markdown_content:
+                        page_content = page.markdown_content
+                        logger.debug(f"Extracted content from page {i} using 'page.markdown_content'.")
+                    elif hasattr(page, 'text') and page.text: 
+                        page_content = page.text
+                        logger.debug(f"Extracted content from page {i} using 'page.text'.")
+                    
+                    if page_content:
+                        all_pages_markdown.append(page_content)
+                    else:
+                        page_details_for_log = str(page)[:200] # Default to string snippet
+                        if hasattr(page, '__dict__'):
+                             page_details_for_log = str(vars(page))[:200] # Log part of vars if it's an object
+                        logger.warning(f"Page {i} in OCR response for {file_name} has no 'markdown', 'markdown_content', or 'text'. Page details: {page_details_for_log}")
+                
+                if all_pages_markdown:
+                    extracted_markdown = "\n\n---\nPage Break (simulated)\n---\n\n".join(all_pages_markdown) # Simulate page breaks
+                else:
+                    logger.warning(f"'pages' attribute found but no content extracted from any pages for {file_name}.")
+
+            # Fallbacks if ocr_response doesn't have 'pages' but might have direct text/markdown
+            elif hasattr(ocr_response, 'text') and ocr_response.text:
+                 extracted_markdown = ocr_response.text
+                 logger.info(f"Extracted content from 'ocr_response.text' (no pages structure) for {file_name}.")
+            elif hasattr(ocr_response, 'markdown') and ocr_response.markdown:
+                 extracted_markdown = ocr_response.markdown
+                 logger.info(f"Extracted content from 'ocr_response.markdown' (no pages structure) for {file_name}.")
+            elif isinstance(ocr_response, str) and ocr_response:
+                 extracted_markdown = ocr_response
+                 logger.info(f"OCR response is a direct non-empty string for {file_name}.")
+            else:
+                logger.warning(f"Could not extract markdown from OCR response for {file_name} using known attributes (pages, text, markdown).")
+
+            if not extracted_markdown.strip():
+                logger.warning(f"Extracted markdown is empty for {file_name} after all parsing attempts.")
             
+            return extracted_markdown.strip()
+
+        except SDKError as e:
+            logger.error(f"Mistral API Exception during client.ocr.process for {file_name}: {e.message}")
+            logger.exception("SDKError details:")
+            return ""
+        except Exception as e:
+            logger.error(f"Generic Exception during Mistral client.ocr.process call for {file_name}: {e}")
+            logger.exception("Exception details:")
+            return ""
+
+    async def extract_text_from_image(self, image_path: str, language: Optional[str] = None) -> str:
+        if language: 
+            logger.info(f"Language parameter '{language}' provided, but Mistral OCR is broadly multilingual.")
+        
+        ext = Path(image_path).suffix.lower()
+        mime_map = {'.jpeg': 'image/jpeg', '.jpg': 'image/jpeg', '.png': 'image/png', 
+                    '.gif': 'image/gif', '.bmp': 'image/bmp', '.tiff': 'image/tiff', '.webp': 'image/webp',
+                    '.avif': 'image/avif'} 
+        mime_type = mime_map.get(ext)
+        if not mime_type:
+            logger.warning(f"Unsupported image extension '{ext}' for path '{image_path}'. Attempting with 'application/octet-stream'.")
+            mime_type = 'application/octet-stream' 
+            
+        return await self._process_file_with_mistral(image_path, mime_type)
+
+    async def extract_text_from_pdf(self, pdf_path: str) -> str:
+        return await self._process_file_with_mistral(pdf_path, "application/pdf")
+
+    async def extract_text_from_pdf_images(self, pdf_path: str) -> List[str]:
+        logger.info("Mistral processes PDFs directly. This method will return the full Markdown content as a single list item.")
+        full_markdown = await self._process_file_with_mistral(pdf_path, "application/pdf")
+        if full_markdown:
+            return [full_markdown]
+        return [""] 
+
+    async def extract_text_with_confidence(self, image_path: str, min_confidence: float = 0.5) -> Dict[str, Any]:
+        logger.warning("Mistral Document AI API (ocr.process) typically returns structured text (Markdown). Word-level confidence scores are not standard. 'confidence' field is a placeholder.")
+        
+        ext = Path(image_path).suffix.lower()
+        mime_map = {'.jpeg': 'image/jpeg', '.jpg': 'image/jpeg', '.png': 'image/png', '.avif': 'image/avif'}
+        mime_type = mime_map.get(ext)
+        if not mime_type:
+            logger.warning(f"Unsupported image extension '{ext}' in extract_text_with_confidence. Defaulting mime type.")
+            mime_type = 'application/octet-stream'
+        
+        text_markdown = await self._process_file_with_mistral(image_path, mime_type)
+        
+        return {
+            "text": text_markdown, 
+            "confidence": 0.0, 
+            "word_count": len(text_markdown.split()) if text_markdown else 0, 
+            "raw_data": "Mistral ocr.process response contains structured data. See logs from _process_file_with_mistral for details."
+        }
+
+    async def detect_language(self, image_path: str) -> str:
+        logger.warning("Mistral OCR is multilingual; explicit language detection is not part of client.ocr.process.")
+        return 'eng' 
+
+    async def extract_tables_from_image(self, image_path: str) -> List[List[str]]:
+        logger.info("Extracting text (Markdown) from image using Mistral. Mistral OCR preserves table structures in Markdown.")
+        
+        ext = Path(image_path).suffix.lower()
+        mime_map = {'.jpeg': 'image/jpeg', '.jpg': 'image/jpeg', '.png': 'image/png', '.avif': 'image/avif'}
+        mime_type = mime_map.get(ext)
+        if not mime_type:
+             logger.warning(f"Unsupported image extension '{ext}' in extract_tables_from_image. Defaulting mime type.")
+             mime_type = 'application/octet-stream'
+        
+        markdown_content = await self._process_file_with_mistral(image_path, mime_type)
+        
+        if markdown_content:
+            logger.info("Attempting basic parsing of Markdown tables. For complex tables, a dedicated parser is recommended.")
+            table_data = []
+            # Simplified parsing logic for example purposes - can be improved significantly.
+            lines = markdown_content.split('\n')
             for line in lines:
-                if line.strip():
-                    # Split by multiple spaces or tabs
-                    cells = [cell.strip() for cell in line.split() if cell.strip()]
-                    if cells:
+                stripped_line = line.strip()
+                if stripped_line.startswith('|') and stripped_line.endswith('|') and "---" not in stripped_line:
+                    cells = [cell.strip() for cell in stripped_line.strip('|').split('|')]
+                    if any(cells):
                         table_data.append(cells)
             
+            if table_data:
+                 logger.info(f"Extracted {len(table_data)} lines potentially forming tables using basic parsing.")
+            else:
+                 logger.info("No distinct table structures found with basic parsing from extracted markdown.")
             return table_data
-            
-        except Exception as e:
-            logger.error(f"Error extracting tables from image: {str(e)}")
-            return []
-    
+        return []
+
     async def get_supported_languages(self) -> List[str]:
-        """Get list of supported OCR languages"""
-        try:
-            languages = pytesseract.get_languages()
-            return sorted(languages)
-        except Exception as e:
-            logger.error(f"Error getting supported languages: {str(e)}")
-            return ['eng']  # Default to English only
-    
+        logger.info("Mistral OCR is multilingual. Refer to official Mistral AI documentation for details.")
+        return ['eng', 'multilingual (refer to Mistral documentation)']
+
     async def validate_ocr_setup(self) -> Dict[str, Any]:
-        """Validate OCR setup and return status"""
         try:
-            # Test basic functionality
-            test_image = Image.new('RGB', (200, 50), color='white')
-            
-            from PIL import ImageDraw, ImageFont
-            draw = ImageDraw.Draw(test_image)
-            
-            try:
-                # Try to use a default font
-                draw.text((10, 10), "Test OCR", fill='black')
-            except:
-                # Fall back to basic text without font
-                draw.text((10, 10), "Test", fill='black')
-            
-            # Test OCR
-            result = pytesseract.image_to_string(test_image)
-            
-            # Get available languages
-            languages = await self.get_supported_languages()
-            
+            models_response = await asyncio.to_thread(self.client.models.list)
+            model_ids = [model.id for model in models_response.data]
             return {
                 "status": "operational",
-                "tesseract_version": pytesseract.get_tesseract_version(),
-                "available_languages": languages,
-                "current_language": self.language,
-                "test_result": result.strip(),
-                "tesseract_path": pytesseract.pytesseract.tesseract_cmd
+                "message": "Mistral client initialized. API key present. Model listing successful.",
+                "mistral_available_models_sample": model_ids[:5],
+                "configured_ocr_model": self.ocr_model_name,
             }
-            
+        except SDKError as e:
+            logger.error(f"Mistral API Exception during setup validation: {e.message}")
+            return { "status": "error", "error": f"Mistral API Error: {e.message}"}
         except Exception as e:
-            return {
-                "status": "error",
-                "error": str(e),
-                "tesseract_path": pytesseract.pytesseract.tesseract_cmd
-            }
+            logger.error(f"Generic error during Mistral OCR setup validation: {str(e)}")
+            return { "status": "error", "error": str(e) }
     
-    def extract_text(self, file_path):
-        # Dummy implementation for OCR
-        return "OCR functionality not implemented yet."
+    def extract_text(self, file_path: str) -> str:
+        logger.warning("`extract_text` is a synchronous method. Running async Mistral OCR in a blocking way.")
+        try:
+            ext = Path(file_path).suffix.lower()
+            if ext in ['.jpeg', '.jpg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.avif']:
+                result = asyncio.run(self.extract_text_from_image(file_path))
+            elif ext == '.pdf':
+                result = asyncio.run(self.extract_text_from_pdf(file_path))
+            else:
+                logger.error(f"Unsupported file type for sync extract_text: {file_path}")
+                return "Unsupported file type."
+            return result
+        except Exception as e:
+            logger.error(f"Error in synchronous extract_text for {file_path}: {str(e)}")
+            return "Error during sync extraction."
+
+# Example of how to use the OCRService (main execution part)
+async def main_example():
+    logging.basicConfig(level=logging.DEBUG, 
+                        format='%(asctime)s - %(levelname)s - %(name)s - %(funcName)s - %(message)s')
+
+    if not os.environ.get("MISTRAL_API_KEY"):
+       logger.error("MISTRAL_API_KEY environment variable is not set. Please set it: export MISTRAL_API_KEY='yourkey'")
+       return
+
+    ocr_service = OCRService()
+    
+    logger.info("--- Validating OCR Service Setup ---")
+    validation_status = await ocr_service.validate_ocr_setup()
+    logger.info(f"OCR Service Validation: {validation_status}")
+    if validation_status.get("status") == "error":
+        logger.error("Halting due to validation error.")
+        return
+
+    # --- Test with a specific PDF file ---
+    pdf_path_to_test = r"C:\path\to\your\certificate.pdf"
+
+    if os.path.exists(pdf_path_to_test):
+        logger.info(f"\n--- Extracting text from specific PDF: {pdf_path_to_test} ---")
+        # Using the method that aligns with original `extract_text_from_pdf_images` signature
+        pdf_markdown_list = await ocr_service.extract_text_from_pdf_images(pdf_path_to_test)
+        if pdf_markdown_list and pdf_markdown_list[0]:
+            logger.info(f"Extracted Markdown from PDF ({pdf_path_to_test}):\n" + pdf_markdown_list[0])
+        else: 
+            logger.warning(f"No text extracted from PDF {pdf_path_to_test} or an error occurred.")
+    else:
+        logger.warning(f"PDF file for specific test '{pdf_path_to_test}' not found. Skipping this test.")
+        logger.warning("Please update `pdf_path_to_test` in `main_example` to a valid PDF path.")
+
+    image_path = "dummy_test_image_ocr.png" 
+    if os.path.exists(image_path):
+        logger.info(f"\n---Extracting text from image: {image_path} ---")
+        # ... image processing logic ...
+        pass
+    else:
+        logger.info(f"Dummy image {image_path} not created or found, skipping optional image test.")
+
+
+if __name__ == '__main__':
+    asyncio.run(main_example())
