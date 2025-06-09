@@ -41,7 +41,7 @@ generative_tool_instance = GenerativeTool(
     search_tool=search_tool_instance
 )
 
-mcp = FastMCP("intelligent-content-organizer-fmcp")
+mcp = FastMCP("content")
 logger.info("FastMCP server initialized.")
 
 @mcp.tool()
