@@ -1,4 +1,4 @@
-gradio
+gradio[mcp]
 anthropic>=0.7.0
 mistralai
 sentence-transformers>=2.2.2
