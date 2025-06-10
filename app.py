@@ -430,16 +430,25 @@ def create_gradio_interface():
         # 🧠 Intelligent Content Organizer MCP Agent
         A powerful MCP (Model Context Protocol) server for intelligent content management with semantic search, 
         summarization, and Q&A capabilities.
+
+        👉 Read the full article here:  
+        <a href="https://huggingface.co/blog/Nihal2000/intelligent-content-organizer#empowering-your-data-building-an-intelligent-content-organizer-with-mistral-ai-and-the-model-context-protocol" target="_blank">Building an Intelligent Content Organizer</a>
+
         ## 🚀 Quick Start:
-        1. **Documents in Library** → View your uploaded documents in the "📚 Document Library" tab
+        1. **Documents in Library** → View your uploaded documents in the "📚 Document Library" tab  
         2. **Upload Documents** → Go to "📄 Upload Documents" tab  
         3. **Search Your Content** → Use "🔍 Search Documents" to find information  
-        4. **Get Summaries** → Select any document in "📝 Summarize" tab
-        5. **Generate Tags** → Auto-generate tags for your documents in "🏷️ Generate Tags" tab
-        6. **Ask Questions** → Get answers from your documents in "❓ Ask Questions" tab
-        7. **Delete Documents** → Remove documents from your library in "📚 Document Library" tab
-        8. **Refresh Library** → Click the 🔄 button to refresh the document list      
+        4. **Get Summaries** → Select any document in "📝 Summarize" tab  
+        5. **Generate Tags** → Auto-generate tags for your documents in "🏷️ Generate Tags" tab  
+        6. **Ask Questions** → Get answers from your documents in "❓ Ask Questions" tab  
+        7. **Delete Documents** → Remove documents from your library in "📚 Document Library" tab  
+        8. **Refresh Library** → Click the 🔄 button to refresh the document list  
+
+        ---
+        🔗 For using MCP tools in Claude or other MCP clients, use this endpoint in the config file:  
+         https://agents-mcp-hackathon-intelligent-content-organizer.hf.space/gradio_api/mcp/sse
         """)
+
 
         with gr.Tabs():
             with gr.Tab("📚 Document Library"):
