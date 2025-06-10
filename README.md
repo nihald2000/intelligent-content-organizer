@@ -8,9 +8,9 @@ sdk_version: 5.32.0
 app_file: app.py
 pinned: false
 license: mit
-tag: 
-  -mcp-server-track
-  -agent-demo-track
+tags:
+  - mcp-server-track
+  - agent-demo-track
 ---
 
 A powerful Model Context Protocol (MCP) server for intelligent content management with semantic search, summarization, and Q&A capabilities powered by **OpenAI, Mistral AI, and Anthropic Claude**.
