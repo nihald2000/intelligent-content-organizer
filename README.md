@@ -42,31 +42,32 @@ A powerful Model Context Protocol (MCP) server for intelligent content managemen
 
 ## 📋 Complete File Structure
 intelligent-content-organizer/
-├── app.py                     # Main Gradio app and MCP server
-├── config.py                  # Configuration management
-├── mcp_server.py              # mcp server tools
-├── requirements.txt           # Dependencies
-├── README.md                  # Documentation
-├── .gitignore                # Git ignore rules
-├── core/                     # Core processing logic
-│   ├── init.py
-│   ├── models.py             # Data models
-│   ├── document_parser.py    # Document processing
-│   ├── text_preprocessor.py  # Text cleaning and processing
-│   └── chunker.py           # Text chunking strategies
-├── services/                 # Backend services
-│   ├── init.py
-│   ├── embedding_service.py  # Sentence transformers integration
-│   ├── llm_service.py       # Anthropic + Mistral integration
-│   ├── ocr_service.py       # Mistral OCR integration
-│   ├── vector_store_service.py # FAISS vector storage
-│   └── document_store_service.py # Document metadata storage
-└── mcp_tools/               # MCP tool definitions
+├── app.py # Main Gradio app and MCP server
+├── config.py # Configuration management
+├── mcp_server.py # MCP server tools (registration, serving logic)
+├── requirements.txt # Dependencies
+├── README.md # Documentation
+├── .gitignore # Git ignore rules
+├── core/ # Core processing logic
+│ ├── init.py
+│ ├── models.py # Data models (e.g., Document, Chunk)
+│ ├── document_parser.py # Document processing (PDF, TXT, DOCX, etc.)
+│ ├── text_preprocessor.py # Text cleaning and processing
+│ └── chunker.py # Text chunking strategies
+├── services/ # Backend services
+│ ├── init.py
+│ ├── embedding_service.py # Sentence transformers integration
+│ ├── llm_service.py # Anthropic + Mistral LLM integration
+│ ├── ocr_service.py # Mistral OCR integration
+│ ├── vector_store_service.py # FAISS vector storage
+│ └── document_store_service.py # Document metadata storage (e.g., SQLite, JSON files)
+└── mcp_tools/ # MCP tool definitions
 ├── init.py
-├── ingestion_tool.py    # Document ingestion tool
-├── search_tool.py       # Semantic search tool
-├── generative_tool.py   # AI generation tool
-└── utils.py            # Utility functions
+├── ingestion_tool.py # Document ingestion tool for MCP
+├── search_tool.py # Semantic search tool for MCP
+├── generative_tool.py # AI generation tool for MCP
+└── utils.py # Utility functions for MCP tools
+
 
 ## 🎯 Key Features Implemented
 
@@ -80,11 +81,9 @@ intelligent-content-organizer/
 
 ## 🎥 Demo Video
 
-[📹 Watch the demo video](https://your-demo-video-url.com)
+[📹 Watch the demo video](https://youtu.be/uBYIj_ntFRk)
 
 *The demo shows the MCP server in action, demonstrating document ingestion, semantic search, and Q&A capabilities, utilizing the configured LLM providers.*
-
-## 🛠️ Installation
 
 ### Prerequisites
 
@@ -152,12 +151,11 @@ intelligent-content-organizer/
     - `confidence` (string, optional): Confidence level in the answer (LLM-dependent, might not always be present).
 
 📊 Performance
-
 Embedding Generation: ~100-500ms per document chunk
 Search: <50ms for most queries
 Summarization: 1-5s depending on content length
 Memory Usage: ~200-500MB base + ~1MB per 1000 document chunks
-Supported File Types: PDF, TXT, DOCX, PNG, JPG, JPEG, BMP, TIFF
+Supported File Types: PDF, TXT, DOCX, PNG, JPG, JPEG
 
 
 
