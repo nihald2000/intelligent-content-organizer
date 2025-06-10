@@ -6,14 +6,17 @@ colorTo: green
 sdk: gradio
 sdk_version: 5.32.0
 app_file: app.py
-tag : 
-    -mcp-server-track
-    -Agents-MCP-Hackathon
+tag : Agents-MCP-Hackathon
+      -mcp-server-track
+      -agent-demo-track
+
 pinned: false
 license: mit
 ---
 
 A powerful Model Context Protocol (MCP) server for intelligent content management with semantic search, summarization, and Q&A capabilities powered by **OpenAI, Mistral AI, and Anthropic Claude**.
+
+## [📹 Read Article](https://huggingface.co/blog/Nihal2000/intelligent-content-organizer#empowering-your-data-building-an-intelligent-content-organizer-with-mistral-ai-and-the-model-context-protocol)
 
 ## 🎯 Features
 
@@ -38,36 +41,7 @@ A powerful Model Context Protocol (MCP) server for intelligent content managemen
 - **👁️ Tesseract OCR** for image text extraction
 - **🎨 Gradio** for the user interface and MCP server functionality
 
-**LLM Strategy**: The agent intelligently selects the best available LLM for most generative tasks when 'auto' model selection is used, prioritizing OpenAI, then Mistral, and finally Anthropic. Users can also specify a particular model family (e.g., 'gpt-', 'mistral-', 'claude-').
-
-## 📋 Complete File Structure
-intelligent-content-organizer/
-├── app.py # Main Gradio app and MCP server
-├── config.py # Configuration management
-├── mcp_server.py # MCP server tools (registration, serving logic)
-├── requirements.txt # Dependencies
-├── README.md # Documentation
-├── .gitignore # Git ignore rules
-├── core/ # Core processing logic
-│ ├── init.py
-│ ├── models.py # Data models (e.g., Document, Chunk)
-│ ├── document_parser.py # Document processing (PDF, TXT, DOCX, etc.)
-│ ├── text_preprocessor.py # Text cleaning and processing
-│ └── chunker.py # Text chunking strategies
-├── services/ # Backend services
-│ ├── init.py
-│ ├── embedding_service.py # Sentence transformers integration
-│ ├── llm_service.py # Anthropic + Mistral LLM integration
-│ ├── ocr_service.py # Mistral OCR integration
-│ ├── vector_store_service.py # FAISS vector storage
-│ └── document_store_service.py # Document metadata storage (e.g., SQLite, JSON files)
-└── mcp_tools/ # MCP tool definitions
-├── init.py
-├── ingestion_tool.py # Document ingestion tool for MCP
-├── search_tool.py # Semantic search tool for MCP
-├── generative_tool.py # AI generation tool for MCP
-└── utils.py # Utility functions for MCP tools
-
+## LLM Strategy: The agent intelligently selects the best available LLM for most generative tasks when 'auto' model selection is used, prioritizing OpenAI, then Mistral, and finally Anthropic. Users can also specify a particular model family (e.g., 'gpt-', 'mistral-', 'claude-').
 
 ## 🎯 Key Features Implemented
 
@@ -77,7 +51,7 @@ intelligent-content-organizer/
 4. **AI-Powered Features**: Summarization, tagging, categorization, Q&A with RAG
 5. **Production Ready**: Error handling, logging, caching, rate limiting
 6. **Gradio UI**: Beautiful web interface for testing and direct use
-7. **Anthropic + Mistral**: Dual LLM support with fallbacks
+7. **OpenAi + Anthropic + Mistral**: LLM support with fallbacks
 
 ## 🎥 Demo Video
 
