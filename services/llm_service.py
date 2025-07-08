@@ -14,8 +14,8 @@ class LLMService:
         self.config = config.config
         
         self.anthropic_client = None
-        self.mistral_client = None # Synchronous Mistral client
-        self.openai_async_client = None # Asynchronous OpenAI client
+        self.mistral_client = None 
+        self.openai_async_client = None
         
         self._initialize_clients()
     
@@ -53,7 +53,7 @@ class LLMService:
     async def generate_text(self, prompt: str, model: str = "auto", max_tokens: int = 1000, temperature: float = 0.7) -> str:
         """Generate text using the specified model, with new priority for 'auto'."""
         try:
-            selected_model_name_for_call: str = "" # Actual model name passed to the specific generator
+            selected_model_name_for_call: str = "" 
 
             if model == "auto":
                 # New Priority: 1. OpenAI, 2. Mistral, 3. Anthropic
@@ -132,7 +132,7 @@ class LLMService:
             response = await loop.run_in_executor(
                 None,
                 lambda: self.anthropic_client.messages.create(
-                    model=model_name, # Use the passed model_name
+                    model=model_name, 
                     max_tokens=max_tokens,
                     temperature=temperature,
                     messages=[
@@ -160,7 +160,7 @@ class LLMService:
             response = await loop.run_in_executor(
                 None,
                 lambda: self.mistral_client.chat(
-                    model=model_name, # Use the passed model_name
+                    model=model_name, 
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=max_tokens, 
                     temperature=temperature
@@ -265,21 +265,23 @@ class LLMService:
             context = context[:max_context_length] + "..."
             logger.warning(f"Context truncated to {max_context_length} characters for question answering.")
         
-        prompt = f"""You are a helpful assistant. Answer the following question based ONLY on the provided context.
-If the context does not contain the information to answer the question, state that the context does not provide the answer.
-Do not make up information or use external knowledge.
+        prompt = f"""You are an expert Q&A assistant. Your task is to synthesize an answer to the user's question based *only* on the provided source documents.
+Analyze all the source documents provided in the context below.
+If the information is present, provide a comprehensive answer.
 
-Context:
----
+Here are the source documents:
+--- START OF CONTEXT ---
 {context}
----
+--- END OF CONTEXT ---
+
+Based on the context above, please provide a clear and concise answer to the following question.
 
 Question: {question}
 
 Answer:"""
         
         try:
-            answer = await self.generate_text(prompt, model="auto", max_tokens=300, temperature=0.2)
+            answer = await self.generate_text(prompt, model="auto", max_tokens=800, temperature=0.5)
             return answer.strip()
         except Exception as e:
             logger.error(f"Error answering question: {str(e)}")
