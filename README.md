@@ -37,7 +37,7 @@ A powerful Model Context Protocol (MCP) server for intelligent content managemen
 - **🤖 Anthropic Claude** for advanced reasoning (available as a specific choice or fallback)
 - **🔗 Sentence Transformers** for semantic embeddings
 - **📚 FAISS** for fast similarity search
-- **👁️ Tesseract OCR** for image text extraction
+- **👁️ Mistral OCR** for image text extraction
 - **🎨 Gradio** for the user interface and MCP server functionality
 
 ## LLM Strategy: The agent intelligently selects the best available LLM for most generative tasks when 'auto' model selection is used, prioritizing OpenAI, then Mistral, and finally Anthropic. Users can also specify a particular model family (e.g., 'gpt-', 'mistral-', 'claude-').
