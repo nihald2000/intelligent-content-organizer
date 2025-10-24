@@ -3,7 +3,6 @@ import logging
 import asyncio
 from typing import List, Dict, Any, Optional
 
-import anthropic
 import openai
 import config
 
@@ -13,35 +12,29 @@ class LLMService:
     def __init__(self):
         self.config = config.config
         
-        self.anthropic_client = None
+        self.nebius_client = None
         self.mistral_client = None 
-        self.openai_async_client = None
         
         self._initialize_clients()
     
     def _initialize_clients(self):
         """Initialize LLM clients"""
         try:
-            if self.config.ANTHROPIC_API_KEY:
-                self.anthropic_client = anthropic.Anthropic(
-                    api_key=self.config.ANTHROPIC_API_KEY
+            if self.config.NEBIUS_API_KEY:
+                self.nebius_client = openai.OpenAI(
+                    api_key=self.config.NEBIUS_API_KEY,
+                    base_url=self.config.NEBIUS_BASE_URL
                 )
-                logger.info("Anthropic client initialized")
+                logger.info("NEBIUS client initialized")
             
             if self.config.MISTRAL_API_KEY:
                 self.mistral_client = Mistral( # Standard sync client
                     api_key=self.config.MISTRAL_API_KEY
                 )
                 logger.info("Mistral client initialized")
-
-            if self.config.OPENAI_API_KEY:
-                self.openai_async_client = openai.AsyncOpenAI(
-                    api_key=self.config.OPENAI_API_KEY
-                )
-                logger.info("OpenAI client initialized")
             
             # Check if at least one client is initialized
-            if not any([self.openai_async_client, self.mistral_client, self.anthropic_client]):
+            if not any([self.nebius_client, self.mistral_client]):
                 logger.warning("No LLM clients could be initialized based on current config. Check API keys.")
             else:
                 logger.info("LLM clients initialized successfully (at least one).")
@@ -56,99 +49,68 @@ class LLMService:
             selected_model_name_for_call: str = "" 
 
             if model == "auto":
-                # New Priority: 1. OpenAI, 2. Mistral, 3. Anthropic
-                if self.openai_async_client and self.config.OPENAI_MODEL:
-                    selected_model_name_for_call = self.config.OPENAI_MODEL
-                    logger.debug(f"Auto-selected OpenAI model: {selected_model_name_for_call}")
-                    return await self._generate_with_openai(prompt, selected_model_name_for_call, max_tokens, temperature)
+                # New Priority: 1. NEBIUS (OpenAI OSS), 2. Mistral
+                if self.nebius_client and self.config.NEBIUS_MODEL:
+                    selected_model_name_for_call = self.config.NEBIUS_MODEL
+                    logger.debug(f"Auto-selected NEBIUS model: {selected_model_name_for_call}")
+                    return await self._generate_with_nebius(prompt, selected_model_name_for_call, max_tokens, temperature)
                 elif self.mistral_client and self.config.MISTRAL_MODEL:
                     selected_model_name_for_call = self.config.MISTRAL_MODEL
                     logger.debug(f"Auto-selected Mistral model: {selected_model_name_for_call}")
                     return await self._generate_with_mistral(prompt, selected_model_name_for_call, max_tokens, temperature)
-                elif self.anthropic_client and self.config.ANTHROPIC_MODEL:
-                    selected_model_name_for_call = self.config.ANTHROPIC_MODEL
-                    logger.debug(f"Auto-selected Anthropic model: {selected_model_name_for_call}")
-                    return await self._generate_with_claude(prompt, selected_model_name_for_call, max_tokens, temperature)
                 else:
                     logger.error("No LLM clients available for 'auto' mode or default models not configured.")
                     raise ValueError("No LLM clients available for 'auto' mode or default models not configured.")
             
-            elif model.startswith("gpt-") or model.lower().startswith("openai/"):
-                if not self.openai_async_client:
-                    raise ValueError("OpenAI client not available. Check API key or model prefix.")
+            elif model.startswith("gpt-") or model.startswith("openai/") or model.lower().startswith("nebius/"):
+                if not self.nebius_client:
+                    raise ValueError("NEBIUS client not available. Check API key or model prefix.")
                 actual_model = model.split('/')[-1] if '/' in model else model
-                return await self._generate_with_openai(prompt, actual_model, max_tokens, temperature)
+                return await self._generate_with_nebius(prompt, actual_model, max_tokens, temperature)
             
             elif model.startswith("mistral"):
                 if not self.mistral_client:
                     raise ValueError("Mistral client not available. Check API key or model prefix.")
                 return await self._generate_with_mistral(prompt, model, max_tokens, temperature)
-
-            elif model.startswith("claude"):
-                if not self.anthropic_client:
-                    raise ValueError("Anthropic client not available. Check API key or model prefix.")
-                return await self._generate_with_claude(prompt, model, max_tokens, temperature)
             
             else:
-                raise ValueError(f"Unsupported model: {model}. Must start with 'gpt-', 'openai/', 'claude', 'mistral', or be 'auto'.")
+                raise ValueError(f"Unsupported model: {model}. Must start with 'gpt-', 'openai/', 'nebius/', 'mistral', or be 'auto'.")
         
         except Exception as e:
             logger.error(f"Error generating text with model '{model}': {str(e)}")
             raise
 
-    async def _generate_with_openai(self, prompt: str, model_name: str, max_tokens: int, temperature: float) -> str:
-        """Generate text using OpenAI (Async)"""
-        if not self.openai_async_client:
-            raise RuntimeError("OpenAI async client not initialized.")
+    async def _generate_with_nebius(self, prompt: str, model_name: str, max_tokens: int, temperature: float) -> str:
+        """Generate text using NEBIUS (OpenAI OSS models via sync client)"""
+        if not self.nebius_client:
+            raise RuntimeError("NEBIUS client not initialized.")
         try:
-            logger.debug(f"Generating with OpenAI model: {model_name}, max_tokens: {max_tokens}, temp: {temperature}, prompt: '{prompt[:50]}...'")
-            response = await self.openai_async_client.chat.completions.create(
-                model=model_name,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
+            logger.debug(f"Generating with NEBIUS model: {model_name}, max_tokens: {max_tokens}, temp: {temperature}, prompt: '{prompt[:50]}...'")
+            loop = asyncio.get_event_loop()
+            
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.nebius_client.chat.completions.create(
+                    model=model_name,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
             )
             if response.choices and response.choices[0].message:
                  content = response.choices[0].message.content
                  if content is not None:
                      return content.strip()
                  else:
-                     logger.warning(f"OpenAI response message content is None for model {model_name}.")
+                     logger.warning(f"NEBIUS response message content is None for model {model_name}.")
                      return ""
             else:
-                logger.warning(f"OpenAI response did not contain expected choices or message for model {model_name}.")
+                logger.warning(f"NEBIUS response did not contain expected choices or message for model {model_name}.")
                 return ""
         except Exception as e:
-            logger.error(f"Error with OpenAI generation (model: {model_name}): {str(e)}")
+            logger.error(f"Error with NEBIUS generation (model: {model_name}): {str(e)}")
             raise
 
-    async def _generate_with_claude(self, prompt: str, model_name: str, max_tokens: int, temperature: float) -> str:
-        """Generate text using Anthropic/Claude (Sync via run_in_executor)"""
-        if not self.anthropic_client:
-            raise RuntimeError("Anthropic client not initialized.")
-        try:
-            logger.debug(f"Generating with Anthropic model: {model_name}, max_tokens: {max_tokens}, temp: {temperature}, prompt: '{prompt[:50]}...'")
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: self.anthropic_client.messages.create(
-                    model=model_name, 
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ]
-                )
-            )
-            if response.content and response.content[0].text:
-                return response.content[0].text.strip()
-            else:
-                logger.warning(f"Anthropic response did not contain expected content for model {model_name}.")
-                return ""
-        except Exception as e:
-            logger.error(f"Error with Anthropic (Claude) generation (model: {model_name}): {str(e)}")
-            raise
-    
     async def _generate_with_mistral(self, prompt: str, model_name: str, max_tokens: int, temperature: float) -> str:
         """Generate text using Mistral (Sync via run_in_executor)"""
         if not self.mistral_client:
@@ -348,9 +310,8 @@ Answer:"""
     async def check_availability(self) -> Dict[str, bool]:
         """Check which LLM services are available by making a tiny test call."""
         availability = {
-            "openai": False,
-            "mistral": False,
-            "anthropic": False
+            "nebius": False,
+            "mistral": False
         }
         test_prompt = "Hello"
         test_max_tokens = 5
@@ -358,14 +319,14 @@ Answer:"""
 
         logger.info("Checking LLM availability...")
 
-        if self.openai_async_client and self.config.OPENAI_MODEL:
+        if self.nebius_client and self.config.NEBIUS_MODEL:
             try:
-                logger.debug(f"Testing OpenAI availability with model {self.config.OPENAI_MODEL}...")
-                test_response = await self._generate_with_openai(test_prompt, self.config.OPENAI_MODEL, test_max_tokens, test_temp)
-                availability["openai"] = bool(test_response.strip())
+                logger.debug(f"Testing NEBIUS availability with model {self.config.NEBIUS_MODEL}...")
+                test_response = await self._generate_with_nebius(test_prompt, self.config.NEBIUS_MODEL, test_max_tokens, test_temp)
+                availability["nebius"] = bool(test_response.strip())
             except Exception as e:
-                logger.warning(f"OpenAI availability check failed for model {self.config.OPENAI_MODEL}: {e}")
-        logger.info(f"OpenAI available: {availability['openai']}")
+                logger.warning(f"NEBIUS availability check failed for model {self.config.NEBIUS_MODEL}: {e}")
+        logger.info(f"NEBIUS available: {availability['nebius']}")
         
         if self.mistral_client and self.config.MISTRAL_MODEL:
             try:
@@ -375,15 +336,6 @@ Answer:"""
             except Exception as e:
                 logger.warning(f"Mistral availability check failed for model {self.config.MISTRAL_MODEL}: {e}")
         logger.info(f"Mistral available: {availability['mistral']}")
-
-        if self.anthropic_client and self.config.ANTHROPIC_MODEL:
-            try:
-                logger.debug(f"Testing Anthropic availability with model {self.config.ANTHROPIC_MODEL}...")
-                test_response = await self._generate_with_claude(test_prompt, self.config.ANTHROPIC_MODEL, test_max_tokens, test_temp)
-                availability["anthropic"] = bool(test_response.strip())
-            except Exception as e:
-                logger.warning(f"Anthropic availability check failed for model {self.config.ANTHROPIC_MODEL}: {e}")
-        logger.info(f"Anthropic available: {availability['anthropic']}")
         
         logger.info(f"Final LLM Availability: {availability}")
         return availability
