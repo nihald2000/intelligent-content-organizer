@@ -1,8 +1,8 @@
 ---
-title: Intelligent Content Organizer MCP Agent
-emoji: 😻
+title: AI Digital Library Assistant
+emoji: 📚
 colorFrom: blue
-colorTo: green
+colorTo: purple
 sdk: gradio
 sdk_version: 5.32.0
 app_file: app.py
@@ -11,125 +11,219 @@ license: mit
 tags:
   - mcp-server-track
   - agent-demo-track
+  - llamaindex
+  - elevenlabs
+  - rag
 ---
 
-A powerful Model Context Protocol (MCP) server for intelligent content management with semantic search, summarization, and Q&A capabilities powered by **OpenAI, Mistral AI, and Anthropic Claude**.
+# 📚 AI Digital Library Assistant
+### *Your Intelligent Knowledge Companion with Voice & Podcast Capabilities*
 
-## [📹 Read Article](https://huggingface.co/blog/Nihal2000/intelligent-content-organizer#empowering-your-data-building-an-intelligent-content-organizer-with-mistral-ai-and-the-model-context-protocol)
+> **"Transform your static documents into an interactive, voice-enabled knowledge base that talks back to you."**
 
-## 🎯 Features
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![LlamaIndex](https://img.shields.io/badge/LlamaIndex-Agentic_RAG-purple)](https://www.llamaindex.ai/)
+[![ElevenLabs](https://img.shields.io/badge/ElevenLabs-Voice_AI-orange)](https://elevenlabs.io/)
+[![MCP Ready](https://img.shields.io/badge/MCP-Production_Ready-green)](https://modelcontextprotocol.io/)
 
-### 🔧 MCP Tools Available
+**[🔴 LIVE DEMO: Try it on HuggingFace Spaces](https://huggingface.co/spaces/Nihal2000/intelligent-content-organizer-MCP-Agent)**
 
-- **📄 Document Ingestion**: Upload and process documents (PDF, TXT, DOCX, images with OCR)
-- **🔍 Semantic Search**: Find relevant content using natural language queries
-- **📝 Summarization**: Generate summaries in different styles (concise, detailed, bullet points, executive)
-- **🏷️ Tag Generation**: Automatically generate relevant tags for content
-- **❓ Q&A System**: Ask questions about your documents using RAG (Retrieval-Augmented Generation)
-- **📊 Categorization**: Classify content into predefined or custom categories
-- **🔄 Batch Processing**: Process multiple documents at once
-- **📈 Analytics**: Get insights and statistics about your content
+---
 
-### 🚀 Powered By
+## 🌟 What Makes This Special?
 
-- **🧠 OpenAI GPT models** for powerful text generation and understanding
-- **🔥 Mistral AI** for efficient text processing and analysis
-- **🤖 Anthropic Claude** for advanced reasoning (available as a specific choice or fallback)
-- **🔗 Sentence Transformers** for semantic embeddings
-- **📚 FAISS** for fast similarity search
-- **👁️ Mistral OCR** for image text extraction
-- **🎨 Gradio** for the user interface and MCP server functionality
+The **AI Digital Library Assistant** is not just another document search tool. It's a comprehensive **Model Context Protocol (MCP)** server that revolutionizes how you interact with information.
 
-## LLM Strategy: The agent intelligently selects the best available LLM for most generative tasks when 'auto' model selection is used, prioritizing OpenAI, then Mistral, and finally Anthropic. Users can also specify a particular model family (e.g., 'gpt-', 'mistral-', 'claude-').
+### 🚀 Killer Features
+1.  **🎧 World's First Document-to-Podcast Generator**: Turn boring reports into engaging, multi-voice conversational podcasts using **LlamaIndex** analysis and **ElevenLabs** synthesis.
+2.  **🎙️ Voice-Enabled Librarian**: Talk naturally to your library. The agent understands context, searches documents, and responds with a human-like voice.
+3.  **🤖 Agentic RAG Workflows**: Powered by **LlamaIndex ReAct Agents**, it doesn't just search—it reasons, plans, and executes complex multi-step research tasks.
+4.  **🔌 Production-Ready MCP Server**: Seamlessly integrate with **Claude Desktop** or any MCP client to give your LLM direct access to your private knowledge base.
 
-## 🎯 Key Features Implemented
+---
 
-1. **Full MCP Server**: Complete implementation with all tools exposed
-2. **Multi-Modal Processing**: PDF, TXT, DOCX, and image processing with OCR
-3. **Advanced Search**: Semantic search with FAISS, filtering, and multi-query support
-4. **AI-Powered Features**: Summarization, tagging, categorization, Q&A with RAG
-5. **Production Ready**: Error handling, logging, caching, rate limiting
-6. **Gradio UI**: Beautiful web interface for testing and direct use
-7. **OpenAi + Anthropic + Mistral**: LLM support with fallbacks
+## ⚡ Quick Start
 
-## 🎥 Demo Video
+### 1. Clone the Repository
+```bash
+git clone https://github.com/nihald2000/intelligent-content-organizer.git
+cd intelligent-content-organizer
+```
 
-[📹 Watch the demo video](https://youtu.be/uBYIj_ntFRk)
+### 2. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
 
-*The demo shows the MCP server in action, demonstrating document ingestion, semantic search, and Q&A capabilities, utilizing the configured LLM providers.*
+### 3. Set API Keys
+Create a `.env` file:
+```env
+OPENAI_API_KEY=sk-...
+ELEVENLABS_API_KEY=xi-...
+ELEVENLABS_AGENT_ID=... (optional for voice agent)
+```
 
-### Prerequisites
+### 4. Run the Assistant
+```bash
+python app.py
+```
+*Access the UI at http://localhost:7860*
 
-- Python 3.9+
-- API keys for OpenAI and Mistral AI. An Anthropic API key.
+---
 
-- **MCP Tools Reference** (Tool parameters like model allow specifying "auto" or a specific model family like "gpt-", "mistral-", "claude-")
+## 🏗️ System Architecture
 
-- **ingest_document**
-  - Process and index a document for searching.
-  - **Parameters:**
-    - `file_path` (string): Path to the document file (e.g., an uploaded file path).
-    - `file_type` (string, optional): File type/extension (e.g., ".pdf", ".txt"). If not provided, it's inferred from file_path.
-  - **Returns:**
-    - `success` (boolean): Whether the operation succeeded.
-    - `document_id` (string): Unique identifier for the processed document.
-    - `chunks_created` (integer): Number of text chunks created.
-    - `message` (string): Human-readable result message.
+The system is built on a modular microservices architecture exposed via the Model Context Protocol.
 
-- **semantic_search**
-  - Search through indexed content using natural language.
-  - **Parameters:**
-    - `query` (string): Search query.
-    - `top_k` (integer, optional): Number of results to return (default: 5).
-    - `filters` (object, optional): Search filters (e.g., {"document_id": "some_id"}).
-  - **Returns:**
-    - `success` (boolean): Whether the search succeeded.
-    - `results` (array of objects): Array of search results, each with content and score.
-    - `total_results` (integer): Number of results found.
+```mermaid
+graph TB
+    User[User] --> Gradio[Gradio UI]
+    User --> Claude[Claude Desktop]
+    
+    Gradio --> App[MCP Server]
+    Claude --> App
+    
+    subgraph "Core Services"
+        App --> Ingestion[Ingestion Service]
+        App --> Search[Search Service]
+        App --> RAG[LlamaIndex RAG]
+        App --> Voice[ElevenLabs Voice]
+        App --> Podcast[Podcast Generator]
+    end
+    
+    subgraph "Data Layer"
+        Ingestion --> VectorDB[FAISS Vector Store]
+        Ingestion --> DocStore[Document Store]
+    end
+    
+    subgraph "AI Providers"
+        RAG --> OpenAI[OpenAI / Mistral]
+        Voice --> Eleven[ElevenLabs API]
+        Podcast --> Eleven
+    end
+```
 
-- **summarize_content**
-  - Generate a summary of provided content.
-  - **Parameters:**
-    - `content` (string, optional): Text content to summarize.
-    - `document_id` (string, optional): ID of document to summarize. (Either content or document_id must be provided).
-    - `style` (string, optional): Summary style: "concise", "detailed", "bullet_points", "executive" (default: "concise").
-    - `model` (string, optional): Specific LLM to use (e.g., "gpt-4o-mini", "mistral-large-latest", "auto"). Default: "auto".
-  - **Returns:**
-    - `success` (boolean): Whether summarization succeeded.
-    - `summary` (string): Generated summary.
-    - `original_length` (integer): Character length of original content.
-    - `summary_length` (integer): Character length of summary.
+---
 
-- **generate_tags**
-  - Generate relevant tags for content.
-  - **Parameters:**
-    - `content` (string, optional): Text content to tag.
-    - `document_id` (string, optional): ID of document to tag. (Either content or document_id must be provided).
-    - `max_tags` (integer, optional): Maximum number of tags (default: 5).
-    - `model` (string, optional): Specific LLM to use. Default: "auto".
-  - **Returns:**
-    - `success` (boolean): Whether tag generation succeeded.
-    - `tags` (array of strings): Array of generated tags.
+## 🛠️ MCP Tools Documentation
 
-- **answer_question**
-  - Answer questions using RAG over your indexed content.
-  - **Parameters:**
-    - `question` (string): Question to answer.
-    - `context_filter` (object, optional): Filters for context retrieval (e.g., {"document_id": "some_id"}).
-    - `model` (string, optional): Specific LLM to use. Default: "auto".
-  - **Returns:**
-    - `success` (boolean): Whether question answering succeeded.
-    - `answer` (string): Generated answer.
-    - `sources` (array of objects): Source document chunks used for context, each with document_id, chunk_id, and content.
-    - `confidence` (string, optional): Confidence level in the answer (LLM-dependent, might not always be present).
+The server exposes **8 powerful tools** to any MCP-compatible client (like Claude Desktop).
 
-📊 Performance
-Embedding Generation: ~100-500ms per document chunk
-Search: <50ms for most queries
-Summarization: 1-5s depending on content length
-Memory Usage: ~200-500MB base + ~1MB per 1000 document chunks
-Supported File Types: PDF, TXT, DOCX, PNG, JPG, JPEG
+### 1. `ingest_document`
+Upload and process documents (PDF, TXT, DOCX, Images).
+- **Args**: `file_path` (str), `file_type` (str)
+- **Returns**: Document ID and chunk stats.
 
+### 2. `semantic_search`
+Find relevant content using vector similarity.
+- **Args**: `query` (str), `top_k` (int)
+- **Returns**: Ranked list of matching segments.
 
+### 3. `answer_question` (RAG)
+Ask questions about your documents.
+- **Args**: `question` (str), `context_filter` (dict)
+- **Returns**: AI-generated answer with citations.
 
+### 4. `voice_qa` 🎙️
+Voice-optimized Q&A for conversational interfaces.
+- **Args**: `message` (str), `session_id` (str)
+- **Returns**: Speech-ready text response.
 
+### 5. `generate_podcast` 🎧
+Create an audio podcast from selected documents.
+- **Args**: `document_ids` (list), `style` (str), `duration_minutes` (int)
+- **Returns**: Path to generated MP3 file.
+
+### 6. `summarize_content`
+Generate summaries in various styles.
+- **Args**: `document_id` (str), `style` (str)
+- **Returns**: Summary text.
+
+### 7. `generate_tags`
+Auto-tag documents for organization.
+- **Args**: `document_id` (str), `max_tags` (int)
+- **Returns**: List of tags.
+
+### 8. `list_documents_for_ui`
+Retrieve library metadata.
+- **Returns**: List of available documents.
+
+---
+
+## 🎥 Demo Video Script
+
+> **Watch the full demo here: [YouTube Link Placeholder]**
+
+| Time | Section | Description |
+|------|---------|-------------|
+| **0:00** | **Intro** | "Meet your new AI Digital Library Assistant—it reads, listens, and even makes podcasts." |
+| **0:30** | **Ingestion** | Drag-and-drop a complex PDF research paper. Watch it get indexed in seconds. |
+| **1:00** | **Agentic RAG** | Ask: "Compare the methodologies in these 3 papers." Watch the agent plan and execute. |
+| **2:00** | **Podcast** | **THE WOW FACTOR**: Select a paper, choose "Conversational" style, and generate a 5-min podcast. Play the audio. |
+| **3:30** | **MCP** | Switch to Claude Desktop. Ask Claude to "Read my library and summarize the latest findings." |
+| **4:00** | **Outro** | "Built with LlamaIndex, ElevenLabs, and MCP. The future of knowledge management." |
+
+---
+
+## 💻 Technology Stack
+
+We chose the best-in-class tools to build this agent:
+
+| Component | Technology | Why We Chose It |
+|-----------|------------|-----------------|
+| **Orchestration** | **LlamaIndex** | Best-in-class agentic RAG and data connectors. Essential for complex reasoning. |
+| **Voice AI** | **ElevenLabs** | Unmatched voice quality and low latency. Critical for the podcast feature. |
+| **Protocol** | **MCP (FastMCP)** | The standard for connecting AI models to data. Enables Claude Desktop integration. |
+| **LLM** | **OpenAI / Mistral** | Reliable reasoning and high-context windows for document analysis. |
+| **UI** | **Gradio** | Rapid prototyping of beautiful, functional web interfaces. |
+| **Vector DB** | **FAISS** | Fast, local, and efficient similarity search. |
+
+---
+
+## 🤝 Sponsor Recognition
+
+A huge thank you to our hackathon sponsors for enabling this innovation:
+
+- **LlamaIndex**: The `ReActAgent` and `VectorStoreIndex` form the brain of our system, allowing it to "think" about documents rather than just search them.
+- **ElevenLabs**: The `Text-to-Speech` API brings our library to life, powering both the Voice Assistant and the unique Podcast Generator.
+- **Model Context Protocol**: Provided the standardized framework to expose our tools to the world, making this a true "Agentic" platform.
+
+---
+
+## 🚀 Deployment
+
+### Option 1: Local (Recommended for Dev)
+```bash
+python app.py
+```
+
+### Option 2: Claude Desktop Integration
+Add this to your `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "digital-library": {
+      "command": "python",
+      "args": ["/absolute/path/to/mcp_server.py"]
+    }
+  }
+}
+```
+
+### Option 3: Blaxel Cloud
+```bash
+./deploy.sh
+```
+
+---
+
+## 📜 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+<div align="center">
+  <sub>Built with ❤️ for the MCP Hackathon 2024</sub>
+</div>
