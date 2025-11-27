@@ -17,13 +17,9 @@ class Config:
     
     # Model Configuration
     EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-<<<<<<< HEAD
     ANTHROPIC_MODEL: str = os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307")
     MISTRAL_MODEL: str = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-=======
-    MISTRAL_MODEL: str = os.getenv("MISTRAL_MODEL", "mistral-small-latest")  # Using smaller model
->>>>>>> 30025c34a7fb42af68a8d58b7f845f467d1c822d
     
     # Vector Store Configuration
     DATA_DIR: str = os.getenv("DATA_DIR", "./data")
@@ -48,22 +44,9 @@ class Config:
     ELEVENLABS_AGENT_ID: Optional[str] = os.getenv("ELEVENLABS_AGENT_ID")
     ELEVENLABS_VOICE_MODEL: str = os.getenv("ELEVENLABS_VOICE_MODEL", "Rachel")
     
-    # Voice Settings
-    VOICE_SPEED: float = float(os.getenv("VOICE_SPEED", "1.0"))
-    VOICE_STABILITY: float = float(os.getenv("VOICE_STABILITY", "0.5"))
-    VOICE_SIMILARITY_BOOST: float = float(os.getenv("VOICE_SIMILARITY_BOOST", "0.75"))
-    CONVERSATION_TIMEOUT: int = int(os.getenv("CONVERSATION_TIMEOUT", "30"))
-    
-    @classmethod
-    def validate(cls) -> bool:
-        """Validate that required configuration is present"""
-        # Make API keys optional for testing
-        return True
+    # App Configuration
+    HOST: str = os.getenv("HOST", "0.0.0.0")
+    PORT: int = int(os.getenv("PORT", "7860"))
+    DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
 
-# Global config instance
 config = Config()
-
-# Create data directories
-import pathlib
-pathlib.Path(config.VECTOR_STORE_PATH).mkdir(parents=True, exist_ok=True)
-pathlib.Path(config.DOCUMENT_STORE_PATH).mkdir(parents=True, exist_ok=True)
