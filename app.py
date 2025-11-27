@@ -28,6 +28,26 @@ import config
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+# Import our custom modules
+from mcp_tools.ingestion_tool import IngestionTool
+from mcp_tools.search_tool import SearchTool
+from mcp_tools.generative_tool import GenerativeTool
+from services.vector_store_service import VectorStoreService
+from services.document_store_service import DocumentStoreService
+from services.embedding_service import EmbeddingService
+from services.llm_service import LLMService
+from services.ocr_service import OCRService
+from core.models import SearchResult, Document
+import config
+from services.llamaindex_service import LlamaIndexService
+from services.elevenlabs_service import ElevenLabsService
+from services.podcast_generator_service import PodcastGeneratorService
+from mcp_tools.voice_tool import VoiceTool
+from mcp_tools.podcast_tool import PodcastTool
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class ContentOrganizerMCPServer:
     def __init__(self):
@@ -38,6 +58,16 @@ class ContentOrganizerMCPServer:
         self.embedding_service = EmbeddingService()
         self.llm_service = LLMService()
         self.ocr_service = OCRService()
+        self.llamaindex_service = LlamaIndexService(self.document_store)
+        
+        # Initialize ElevenLabs voice service
+        self.elevenlabs_service = ElevenLabsService(self.llamaindex_service)
+        
+        # Initialize Podcast Generator
+        self.podcast_generator = PodcastGeneratorService(
+            llamaindex_service=self.llamaindex_service,
+            llm_service=self.llm_service
+        )
         
         # Initialize tools
         self.ingestion_tool = IngestionTool(
@@ -55,6 +85,9 @@ class ContentOrganizerMCPServer:
             llm_service=self.llm_service,
             search_tool=self.search_tool
         )
+        self.voice_tool = VoiceTool(self.elevenlabs_service)
+        self.podcast_tool = PodcastTool(self.podcast_generator)
+        
 
         # Track processing status
         self.processing_status = {}
@@ -158,6 +191,27 @@ class ContentOrganizerMCPServer:
             return {"success": True, "tags": tags, "content_length": len(content), "document_id": document_id}
         except Exception as e:
             logger.error(f"Tag generation failed: {str(e)}")
+            return {"success": False, "error": str(e)}
+    async def generate_podcast_async(
+        self,
+        document_ids: List[str],
+        style: str = "conversational",
+        duration_minutes: int = 10,
+        host1_voice: str = "Rachel",
+        host2_voice: str = "Adam"
+    ) -> Dict[str, Any]:
+        """Generate podcast from documents"""
+        try:
+            result = await self.podcast_tool.generate_podcast(
+                document_ids=document_ids,
+                style=style,
+                duration_minutes=duration_minutes,
+                host1_voice=host1_voice,
+                host2_voice=host2_voice
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Podcast generation failed: {str(e)}")
             return {"success": False, "error": str(e)}
 
     async def answer_question_async(self, question: str, context_filter: Optional[Dict] = None) -> Dict[str, Any]:
@@ -424,6 +478,168 @@ def delete_document_from_library(document_id):
             gr.update(choices=doc_choices_error)
         )
 
+        voice_conversation_state = {
+    "session_id": None,
+    "active": False,
+    "transcript": []
+}
+
+def start_voice_conversation():
+    """Start a new voice conversation session"""
+    try:
+        if not mcp_server.elevenlabs_service.is_available():
+            return (
+                "⚠️ Voice assistant not configured. Please set ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID in .env",
+                gr.update(interactive=False),
+                gr.update(interactive=True),
+                ""
+            )
+        
+        session_id = str(uuid.uuid4())
+        result = mcp_server.run_async(mcp_server.elevenlabs_service.start_conversation(session_id))
+        
+        if result.get("success"):
+            voice_conversation_state["session_id"] = session_id
+            voice_conversation_state["active"] = True
+            voice_conversation_state["transcript"] = []
+            
+            return (
+                "🎙️ Voice assistant is ready. Type your question below.",
+                gr.update(interactive=False),
+                gr.update(interactive=True),
+                ""
+            )
+        else:
+            return (
+                f"❌ Failed to start conversation: {result.get('error')}",
+                gr.update(interactive=True),
+                gr.update(interactive=False),
+                ""
+            )
+    except Exception as e:
+        logger.error(f"Error starting voice conversation: {str(e)}")
+        return (
+            f"❌ Error: {str(e)}",
+            gr.update(interactive=True),
+            gr.update(interactive=False),
+            ""
+        )
+
+def stop_voice_conversation():
+    """Stop active voice conversation"""
+    try:
+        if not voice_conversation_state["active"]:
+            return (
+                "No active conversation",
+                gr.update(interactive=True),
+                gr.update(interactive=False),
+                format_transcript(voice_conversation_state["transcript"])
+            )
+        
+        session_id = voice_conversation_state["session_id"]
+        if session_id:
+            mcp_server.run_async(mcp_server.elevenlabs_service.end_conversation(session_id))
+        
+        voice_conversation_state["active"] = False
+        voice_conversation_state["session_id"] = None
+        
+        return (
+            "✅ Conversation ended",
+            gr.update(interactive=True),
+            gr.update(interactive=False),
+            format_transcript(voice_conversation_state["transcript"])
+        )
+    except Exception as e:
+        logger.error(f"Error stopping conversation: {str(e)}")
+        return (
+            f"❌ Error: {str(e)}",
+            gr.update(interactive=True),
+            gr.update(interactive=False),
+            format_transcript(voice_conversation_state["transcript"])
+        )
+
+def send_voice_message(message):
+    """Send a text message in voice conversation"""
+    try:
+        if not voice_conversation_state["active"]:
+            return ("Please start a conversation first", "", format_transcript(voice_conversation_state["transcript"]))
+        
+        if not message or not message.strip():
+            return ("Please enter a message", message, format_transcript(voice_conversation_state["transcript"]))
+        
+        session_id = voice_conversation_state["session_id"]
+        voice_conversation_state["transcript"].append({"role": "user", "content": message})
+        
+        result = mcp_server.run_async(mcp_server.voice_tool.voice_qa(message, session_id))
+        
+        if result.get("success"):
+            answer = result.get("answer", "No response")
+            voice_conversation_state["transcript"].append({"role": "assistant", "content": answer})
+            return ("✅ Response received", "", format_transcript(voice_conversation_state["transcript"]))
+        else:
+            return (f"❌ Error: {result.get('error')}", message, format_transcript(voice_conversation_state["transcript"]))
+    except Exception as e:
+        logger.error(f"Error sending message: {str(e)}")
+        return (f"❌ Error: {str(e)}", message, format_transcript(voice_conversation_state["transcript"]))
+
+def format_transcript(transcript):
+    """Format conversation transcript for display"""
+    if not transcript:
+        return "No conversation yet. Start talking to the AI librarian!"
+    
+    formatted = ""
+    for msg in transcript:
+        role = msg["role"]
+        content = msg["content"]
+        if role == "user":
+            formatted += f"👤 **You:** {content}\n\n"
+        else:
+            formatted += f"🤖 **AI Librarian:** {content}\n\n"
+        formatted += "---\n\n"
+    return formatted
+
+def clear_voice_transcript():
+    """Clear conversation transcript"""
+    voice_conversation_state["transcript"] = []
+    return ""
+
+def generate_podcast_ui(doc_ids, style, duration, voice1, voice2):
+    """UI wrapper for podcast generation"""
+    try:
+        if not doc_ids or len(doc_ids) == 0:
+            return ("⚠️ Please select at least one document", None, "No documents selected", "")
+        
+        logger.info(f"Generating podcast: {len(doc_ids)} docs, {style}, {duration}min")
+        
+        result = mcp_server.run_async(
+            mcp_server.generate_podcast_async(
+                document_ids=doc_ids,
+                style=style,
+                duration_minutes=int(duration),
+                host1_voice=voice1,
+                host2_voice=voice2
+            )
+        )
+        
+        if result.get("success"):
+            audio_file = result.get("audio_file")
+            transcript = result.get("transcript", "Transcript not available")
+            message = result.get("message", "Podcast generated!")
+            formatted_transcript = f"## Podcast Transcript\n\n{transcript}"
+            
+            return (
+                f"✅ {message}",
+                audio_file,
+                formatted_transcript,
+                result.get("podcast_id", "")
+            )
+        else:
+            error = result.get("error", "Unknown error")
+            return (f"❌ Error: {error}", None, "Generation failed", "")
+    except Exception as e:
+        logger.error(f"Podcast UI error: {str(e)}")
+        return (f"❌ Error: {str(e)}", None, "An error occurred", "")
+
 def create_gradio_interface():
     with gr.Blocks(title="🧠 Intelligent Content Organizer MCP Agent", theme=gr.themes.Soft()) as interface:
         gr.Markdown("""
@@ -503,6 +719,171 @@ def create_gradio_interface():
                     with gr.Column():
                         tag_output_display = gr.Textbox(label="Generated Tags", lines=10, placeholder="Tags will appear here...")
 
+            with gr.Tab("🎙️ Voice Assistant"):
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown("""### Voice-Powered AI Librarian
+                        Talk to your AI librarian! Ask questions about your documents 
+                        using natural conversation. The assistant has direct access to 
+                        your document library through advanced RAG technology.
+                        
+                        **Note**: Requires ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID in .env
+                        """)
+                        
+                        voice_status_display = gr.Textbox(
+                            label="Status",
+                            value="Ready to start",
+                            interactive=False,
+                            lines=2
+                        )
+                        
+                        with gr.Row():
+                            start_voice_btn = gr.Button("🎤 Start Conversation", variant="primary", size="lg")
+                            stop_voice_btn = gr.Button("⏹️ Stop", variant="stop", size="lg", interactive=False)
+                        
+                        gr.Markdown("### Type Your Question")
+                        voice_input_text = gr.Textbox(
+                            label="Message",
+                            placeholder="Type your question here and press Enter...",
+                            lines=3
+                        )
+                        send_voice_btn = gr.Button("📤 Send Message", variant="secondary")
+                        
+                    with gr.Column():
+                        gr.Markdown("### Conversation Transcript")
+                        voice_transcript_display = gr.Markdown(
+                            value="No conversation yet. Start talking to the AI librarian!",
+                            label="Transcript"
+                        )
+                        clear_transcript_btn = gr.Button("🗑️ Clear Transcript", variant="secondary")
+                
+                # Voice Assistant event handlers
+                start_voice_btn.click(
+                    fn=start_voice_conversation,
+                    outputs=[voice_status_display, start_voice_btn, stop_voice_btn, voice_transcript_display]
+                )
+                
+                stop_voice_btn.click(
+                    fn=stop_voice_conversation,
+                    outputs=[voice_status_display, start_voice_btn, stop_voice_btn, voice_transcript_display]
+                )
+                
+                send_voice_btn.click(
+                    fn=send_voice_message,
+                    inputs=[voice_input_text],
+                    outputs=[voice_status_display, voice_input_text, voice_transcript_display]
+                )
+                
+                voice_input_text.submit(
+                    fn=send_voice_message,
+                    inputs=[voice_input_text],
+                    outputs=[voice_status_display, voice_input_text, voice_transcript_display]
+                )
+                
+                clear_transcript_btn.click(
+                    fn=clear_voice_transcript,
+                    outputs=[voice_transcript_display]
+                )
+
+            with gr.Tab("🎧 Podcast Studio"):
+                gr.Markdown("""### Transform Documents into Podcasts 🎙️
+                
+                Select documents from your library and generate engaging conversational podcasts 
+                powered by AI. Choose from different styles and voices to create the perfect listening experience.
+                
+                **Features:**
+                - 🎭 4 podcast styles (Conversational, Educational, Technical, Casual)
+                - 🗣️ Multiple voice options for hosts
+                - ⏱️ Customizable duration (5-30 minutes)
+                - 📝 Full transcript generation
+                - 🎵 Professional audio synthesis via ElevenLabs
+                """)
+                
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown("### Configuration")
+                        
+                        podcast_doc_selector = gr.CheckboxGroup(
+                            choices=get_document_choices(),
+                            label="📚 Select Documents for Podcast",
+                            info="Choose one or more documents to discuss"
+                        )
+                        
+                        with gr.Row():
+                            podcast_style = gr.Dropdown(
+                                choices=["conversational", "educational", "technical", "casual"],
+                                value="conversational",
+                                label="🎭 Podcast Style",
+                                info="Conversational: Friendly chat | Educational: Teacher-student | Technical: Expert interview | Casual: Fun discussion"
+                            )
+                            podcast_duration = gr.Slider(
+                                minimum=5,
+                                maximum=30,
+                                value=10,
+                                step=5,
+                                label="⏱️ Duration (minutes)"
+                            )
+                        
+                        with gr.Row():
+                            host1_voice_selector = gr.Dropdown(
+                                choices=["Rachel", "Adam", "Domi", "Bella", "Antoni", "Elli", "Josh"],
+                                value="Rachel",
+                                label="🗣️ Host 1 Voice"
+                            )
+                            host2_voice_selector = gr.Dropdown(
+                                choices=["Adam", "Rachel", "Josh", "Sam", "Emily", "Antoni", "Arnold"],
+                                value="Adam",
+                                label="🗣️ Host 2 Voice"
+                            )
+                        
+                        generate_podcast_btn = gr.Button(
+                            "🎙️ Generate Podcast",
+                            variant="primary",
+                            size="lg"
+                        )
+                        
+                        podcast_status = gr.Textbox(
+                            label="Status",
+                            interactive=False,
+                            lines=2
+                        )
+                        
+                        podcast_id_display = gr.Textbox(
+                            label="Podcast ID",
+                            interactive=False,
+                            visible=False
+                        )
+                    
+                    with gr.Column():
+                        gr.Markdown("### Generated Podcast")
+                        
+                        podcast_audio_player = gr.Audio(
+                            label="🎵 Podcast Audio",
+                            type="filepath"
+                        )
+                        
+                        podcast_transcript_display = gr.Markdown(
+                            value="*Transcript will appear here after generation...*"
+                        )
+                
+                # Event handlers
+                generate_podcast_btn.click(
+                    fn=generate_podcast_ui,
+                    inputs=[
+                        podcast_doc_selector,
+                        podcast_style,
+                        podcast_duration,
+                        host1_voice_selector,
+                        host2_voice_selector
+                    ],
+                    outputs=[
+                        podcast_status,
+                        podcast_audio_player,
+                        podcast_transcript_display,
+                        podcast_id_display
+                    ]
+                )
+                
             with gr.Tab("❓ Ask Questions"):
                 with gr.Row():
                     with gr.Column():
