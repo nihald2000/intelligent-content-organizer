@@ -12,10 +12,11 @@ logger = logging.getLogger(__name__)
 
 class SearchTool:
     def __init__(self, vector_store: VectorStoreService, embedding_service: EmbeddingService,
-                 document_store: Optional[DocumentStoreService] = None):
+                 document_store: Optional[DocumentStoreService] = None, llamaindex_service: Any = None):
         self.vector_store = vector_store
         self.embedding_service = embedding_service
         self.document_store = document_store
+        self.llamaindex_service = llamaindex_service
         self.config = config.config
     
     async def search(self, query: str, top_k: int = 5, filters: Optional[Dict[str, Any]] = None,
@@ -64,6 +65,19 @@ class SearchTool:
         except Exception as e:
             logger.error(f"Error performing semantic search: {str(e)}")
             return []
+
+    async def agentic_search(self, query: str) -> str:
+        """Perform agentic search using LlamaIndex"""
+        if not self.llamaindex_service:
+            logger.warning("LlamaIndex service not available for agentic search")
+            return "Agentic search not available."
+        
+        try:
+            logger.info(f"Performing agentic search for: '{query}'")
+            return await self.llamaindex_service.query(query)
+        except Exception as e:
+            logger.error(f"Error performing agentic search: {str(e)}")
+            return f"Error performing agentic search: {str(e)}"
     
     async def _enhance_results_with_metadata(self, results: List[SearchResult]) -> List[SearchResult]:
         """Enhance search results with document metadata"""

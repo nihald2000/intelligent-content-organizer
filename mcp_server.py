@@ -15,6 +15,13 @@ from mcp_tools.ingestion_tool import IngestionTool
 from mcp_tools.search_tool import SearchTool
 from mcp_tools.generative_tool import GenerativeTool
 
+# Phase 2 & 3: Voice and Podcast
+from services.llamaindex_service import LlamaIndexService
+from services.elevenlabs_service import ElevenLabsService
+from services.podcast_generator_service import PodcastGeneratorService
+from mcp_tools.voice_tool import VoiceTool
+from mcp_tools.podcast_tool import PodcastTool
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -40,6 +47,18 @@ generative_tool_instance = GenerativeTool(
     llm_service=llm_service_instance,
     search_tool=search_tool_instance
 )
+
+# Phase 2 & 3 Services
+logger.info("Initializing Phase 2 & 3 services...")
+llamaindex_service_instance = LlamaIndexService(document_store_service)
+elevenlabs_service_instance = ElevenLabsService(llamaindex_service_instance)
+podcast_generator_instance = PodcastGeneratorService(
+    llamaindex_service=llamaindex_service_instance,
+    llm_service=llm_service_instance
+)
+
+voice_tool_instance = VoiceTool(elevenlabs_service_instance)
+podcast_tool_instance = PodcastTool(podcast_generator_instance)
 
 mcp = FastMCP("")
 logger.info("FastMCP server initialized.")
@@ -178,6 +197,48 @@ async def answer_question(question: str, context_filter: Optional[Dict[str, Any]
         }
     except Exception as e:
         logger.error(f"Error in 'answer_question' tool: {str(e)}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+@mcp.tool()
+async def voice_qa(question: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Ask a question using the AI voice assistant with RAG capabilities.
+    Provides text-based Q&A powered by LlamaIndex agentic search.
+    """
+    logger.info(f"Tool 'voice_qa' called with question: {question}")
+    try:
+        result = await voice_tool_instance.voice_qa(question, session_id)
+        return result
+    except Exception as e:
+        logger.error(f"Error in 'voice_qa' tool: {str(e)}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+@mcp.tool()
+async def generate_podcast(
+    document_ids: List[str],
+    style: str = "conversational",
+    duration_minutes: int = 10,
+    host1_voice: str = "Rachel",
+    host2_voice: str = "Adam"
+) -> Dict[str, Any]:
+    """
+    Generate a podcast from selected documents.
+    Styles: conversational, educational, technical, casual.
+    Duration: 5-30 minutes recommended.
+    Voices: Rachel, Adam, Domi, Bella, Antoni, Josh, Sam, Emily, etc.
+    """
+    logger.info(f"Tool 'generate_podcast' called with {len(document_ids)} docs, style: {style}")
+    try:
+        result = await podcast_tool_instance.generate_podcast(
+            document_ids=document_ids,
+            style=style,
+            duration_minutes=duration_minutes,
+            host1_voice=host1_voice,
+            host2_voice=host2_voice
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error in 'generate_podcast' tool: {str(e)}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 @mcp.tool()

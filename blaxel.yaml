@@ -1,0 +1,122 @@
+name: intelligent-content-organizer
+version: 1.0.0
+description: AI-powered document organization with RAG, voice assistant, and podcast generation
+
+# Runtime configuration
+runtime:
+  python_version: "3.11"
+  entry_point: mcp_server.py
+  
+# Environment variables (set these in your .env file)
+environment:
+  OPENAI_API_KEY: ${OPENAI_API_KEY}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  MISTRAL_API_KEY: ${MISTRAL_API_KEY}
+  ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
+  ELEVENLABS_AGENT_ID: ${ELEVENLABS_AGENT_ID}
+  DATA_DIR: /data
+  VECTOR_STORE_PATH: /data/vector_store
+  DOCUMENT_STORE_PATH: /data/documents
+
+# Resource requirements
+resources:
+  memory: 2048MB
+  cpu: 1.0
+  storage: 5GB
+
+# Health checks
+health_check:
+  path: /health
+  interval: 30s
+  timeout: 5s
+
+# Scaling
+scaling:
+  min_instances: 1
+  max_instances: 3
+  target_cpu_utilization: 70
+  
+# MCP Configuration
+mcp:
+  protocol_version: "1.0"
+  
+  # Exposed MCP tools
+  tools:
+    - name: ingest_document
+      description: Process and index documents for searching
+    - name: semantic_search
+      description: Search documents using natural language
+    - name: summarize_content
+      description: Generate document summaries
+    - name: generate_tags
+      description: Auto-generate tags for documents
+    - name: answer_question
+      description: Answer questions using RAG
+    - name: voice_qa
+      description: Voice-powered Q&A with AI assistant
+    - name: generate_podcast
+      description: Create podcasts from documents
+    - name: list_documents_for_ui
+      description: List available documents
+  
+  # Resources exposed via MCP
+  resources:
+    - name: documents
+      type: document_store
+      description: User document library
+    - name: vector_index
+      type: vector_store
+      description: Semantic search index
+    - name: podcasts
+      type: audio_files
+      description: Generated podcasts
+
+# Networking
+networking:
+  ports:
+    - 8000  # Main application port
+  allowed_origins:
+    - "*"  # CORS configuration
+
+# Logging
+logging:
+  level: INFO
+  format: json
+  destinations:
+    - stdout
+    - file: /var/log/mcp-server.log
+
+# Dependencies (from requirements.txt)
+dependencies:
+  - gradio[mcp]
+  - anthropic>=0.7.0
+  - mistralai
+  - sentence-transformers>=2.2.2
+  - faiss-cpu>=1.7.4
+  - llama-index
+  - llama-index-llms-openai
+  - llama-index-llms-anthropic
+  - llama-index-embeddings-huggingface
+  - elevenlabs>=1.0.0
+  - websockets>=12.0
+  - openai
+  - python-dotenv
+  - PyPDF2>=3.0.0
+  - python-docx>=0.8.11
+  - Pillow>=10.0.0
+
+# Persistence
+persistence:
+  volumes:
+    - name: data
+      mount_path: /data
+      size: 5GB
+    - name: vector_store
+      mount_path: /data/vector_store
+      size: 2GB
+    - name: documents
+      mount_path: /data/documents
+      size: 2GB
+    - name: podcasts
+      mount_path: /data/podcasts
+      size: 1GB
