@@ -225,6 +225,55 @@ class ContentOrganizerMCPServer:
             logger.error(f"Question answering failed: {str(e)}")
             return {"success": False, "error": str(e), "question": question}
 
+    async def generate_outline_async(self, topic: str, num_sections: int = 5, detail_level: str = "medium") -> Dict[str, Any]:
+        try:
+            outline = await self.generative_tool.generate_outline(topic, num_sections, detail_level)
+            return {"success": True, "result": outline}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def explain_concept_async(self, concept: str, audience: str = "general", length: str = "medium") -> Dict[str, Any]:
+        try:
+            explanation = await self.generative_tool.explain_concept(concept, audience, length)
+            return {"success": True, "result": explanation}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def paraphrase_text_async(self, text: str, style: str = "formal") -> Dict[str, Any]:
+        try:
+            paraphrase = await self.generative_tool.paraphrase_text(text, style)
+            return {"success": True, "result": paraphrase}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def categorize_content_async(self, content: str, categories: List[str]) -> Dict[str, Any]:
+        try:
+            category = await self.generative_tool.categorize(content, categories)
+            return {"success": True, "result": category}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def extract_key_insights_async(self, content: str, num_insights: int = 5) -> Dict[str, Any]:
+        try:
+            insights = await self.generative_tool.extract_key_insights(content, num_insights)
+            return {"success": True, "result": "\n".join([f"- {insight}" for insight in insights])}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def generate_questions_async(self, content: str, question_type: str = "comprehension", num_questions: int = 5) -> Dict[str, Any]:
+        try:
+            questions = await self.generative_tool.generate_questions(content, question_type, num_questions)
+            return {"success": True, "result": "\n".join([f"{i+1}. {q}" for i, q in enumerate(questions)])}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    async def extract_key_information_async(self, content: str) -> Dict[str, Any]:
+        try:
+            info = await self.llm_service.extract_key_information(content)
+            return {"success": True, "result": json.dumps(info, indent=2)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def list_documents_sync(self, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
         try:
             documents = self.run_async(self.document_store.list_documents(limit, offset))
@@ -350,33 +399,93 @@ def perform_search(query, top_k):
         logger.error(f"Search error: {str(e)}")
         return f"❌ Error: {str(e)}"
 
-def summarize_document(doc_choice, custom_text, style):
+def update_options_visibility(task):
+    """Update visibility of options based on selected task"""
+    return (
+        gr.update(visible=task == "Summarize"),          # summary_style
+        gr.update(visible=task == "Generate Outline"),   # outline_sections
+        gr.update(visible=task == "Generate Outline"),   # outline_detail
+        gr.update(visible=task == "Explain Concept"),    # explain_audience
+        gr.update(visible=task == "Explain Concept"),    # explain_length
+        gr.update(visible=task == "Paraphrase"),         # paraphrase_style
+        gr.update(visible=task == "Categorize"),         # categories_input
+        gr.update(visible=task in ["Key Insights", "Generate Questions"]), # num_items
+        gr.update(visible=task == "Generate Questions")  # question_type
+    )
+
+def execute_content_task(task, doc_choice, custom_text, 
+                        summary_style, outline_sections, outline_detail,
+                        explain_audience, explain_length,
+                        paraphrase_style, categories_input,
+                        num_items, question_type):
     try:
-        logger.info(f"Summarize called with doc_choice: {doc_choice}, type: {type(doc_choice)}")
-        document_id = doc_choice if doc_choice and doc_choice != "none" and doc_choice != "" else None
-        
+        # Get content
+        content = ""
         if custom_text and custom_text.strip():
-            logger.info("Using custom text for summarization")
-            result = mcp_server.run_async(mcp_server.summarize_content_async(content=custom_text, style=style))
-        elif document_id:
-            logger.info(f"Summarizing document: {document_id}")
-            result = mcp_server.run_async(mcp_server.summarize_content_async(document_id=document_id, style=style))
+            content = custom_text
+        elif doc_choice and doc_choice != "none":
+            content = mcp_server.run_async(mcp_server.get_document_content_async(doc_choice))
+            if not content:
+                return "❌ Error: Document not found or empty"
         else:
-            return "Please select a document from the dropdown or enter text to summarize"
+            if task == "Generate Outline":
+                content = custom_text # Topic is passed as text
+            else:
+                return "⚠️ Please select a document or enter text"
+
+        # Execute task
+        result = {"success": False, "error": "Unknown task"}
         
-        if result["success"]:
-            output_str = f"📝 Summary ({style} style):\n\n{result['summary']}\n\n"
-            output_str += f"📊 Statistics:\n"
-            output_str += f"- Original length: {result['original_length']} characters\n"
-            output_str += f"- Summary length: {result['summary_length']} characters\n"
-            output_str += f"- Compression ratio: {(1 - result['summary_length']/max(1,result['original_length']))*100:.1f}%\n" # Avoid division by zero
-            if result.get('document_id'):
-                output_str += f"- Document ID: {result['document_id']}\n"
-            return output_str
-        else:
-            return f"❌ Summarization failed: {result['error']}"
+        if task == "Summarize":
+            result = mcp_server.run_async(mcp_server.summarize_content_async(content=content, style=summary_style))
+            if result["success"]:
+                return f"📝 Summary ({summary_style}):\n\n{result['summary']}"
+                
+        elif task == "Generate Outline":
+            # For outline, content is the topic
+            result = mcp_server.run_async(mcp_server.generate_outline_async(content, int(outline_sections), outline_detail))
+            if result["success"]:
+                return f"📝 Outline for '{content}':\n\n{result['result']}"
+                
+        elif task == "Explain Concept":
+            # For explain, content is the concept
+            result = mcp_server.run_async(mcp_server.explain_concept_async(content, explain_audience, explain_length))
+            if result["success"]:
+                return f"💡 Explanation ({explain_audience}):\n\n{result['result']}"
+                
+        elif task == "Paraphrase":
+            result = mcp_server.run_async(mcp_server.paraphrase_text_async(content, paraphrase_style))
+            if result["success"]:
+                return f"🔄 Paraphrased Text ({paraphrase_style}):\n\n{result['result']}"
+                
+        elif task == "Categorize":
+            categories = [c.strip() for c in categories_input.split(',')] if categories_input else []
+            result = mcp_server.run_async(mcp_server.categorize_content_async(content, categories))
+            if result["success"]:
+                return f"🏷️ Category:\n\n{result['result']}"
+                
+        elif task == "Key Insights":
+            result = mcp_server.run_async(mcp_server.extract_key_insights_async(content, int(num_items)))
+            if result["success"]:
+                return f"🔍 Key Insights:\n\n{result['result']}"
+                
+        elif task == "Generate Questions":
+            result = mcp_server.run_async(mcp_server.generate_questions_async(content, question_type, int(num_items)))
+            if result["success"]:
+                return f"❓ Generated Questions ({question_type}):\n\n{result['result']}"
+                
+        elif task == "Extract Key Info":
+            result = mcp_server.run_async(mcp_server.extract_key_information_async(content))
+            if result["success"]:
+                return f"📊 Key Information:\n\n{result['result']}"
+
+        if not result["success"]:
+            return f"❌ Error: {result.get('error', 'Unknown error')}"
+            
+        return "✅ Task completed"
+
     except Exception as e:
-        logger.error(f"Summarization error: {str(e)}")
+        logger.error(f"Task execution error: {str(e)}")
         return f"❌ Error: {str(e)}"
 
 def generate_tags_for_document(doc_choice, custom_text, max_tags):
@@ -697,16 +806,71 @@ def create_gradio_interface():
                     with gr.Column(scale=2):
                         search_output_display = gr.Textbox(label="Search Results", lines=20, placeholder="Search results will appear here...")
             
-            with gr.Tab("📝 Summarize"):
+            with gr.Tab("📝 Content Studio"):
                 with gr.Row():
-                    with gr.Column():
-                        gr.Markdown("### Generate Document Summaries")
-                        doc_dropdown_sum_visible = gr.Dropdown(label="Select Document to Summarize", choices=get_document_choices(), value=None, interactive=True, allow_custom_value=False)
-                        summary_text_input = gr.Textbox(label="Or Paste Text to Summarize", placeholder="Paste any text here to summarize...", lines=8)
-                        summary_style_dropdown = gr.Dropdown(label="Summary Style", choices=["concise", "detailed", "bullet_points", "executive"], value="concise", info="Choose how you want the summary formatted")
-                        summarize_btn_action = gr.Button("📝 Generate Summary", variant="primary", size="lg")
-                    with gr.Column():
-                        summary_output_display = gr.Textbox(label="Generated Summary", lines=20, placeholder="Summary will appear here...")
+                    with gr.Column(scale=1):
+                        gr.Markdown("### 🎨 Create & Analyze Content")
+                        
+                        # Source Selection
+                        doc_dropdown_content = gr.Dropdown(label="Select Document", choices=get_document_choices(), value=None, interactive=True)
+                        content_text_input = gr.Textbox(label="Or Enter Text / Topic", placeholder="Paste text to analyze, or enter a topic for outlines...", lines=5)
+                        
+                        gr.Markdown("---")
+                        
+                        # Task Selection
+                        task_dropdown = gr.Dropdown(
+                            label="Select Task",
+                            choices=[
+                                "Summarize", "Generate Outline", "Explain Concept", 
+                                "Paraphrase", "Categorize", "Key Insights", 
+                                "Generate Questions", "Extract Key Info"
+                            ],
+                            value="Summarize",
+                            interactive=True
+                        )
+                        
+                        # Dynamic Options
+                        summary_style_opt = gr.Dropdown(label="Summary Style", choices=["concise", "detailed", "bullet_points", "executive"], value="concise", visible=True)
+                        
+                        outline_sections_opt = gr.Slider(label="Number of Sections", minimum=3, maximum=10, value=5, step=1, visible=False)
+                        outline_detail_opt = gr.Dropdown(label="Detail Level", choices=["brief", "medium", "detailed"], value="medium", visible=False)
+                        
+                        explain_audience_opt = gr.Dropdown(label="Target Audience", choices=["general", "technical", "beginner", "expert"], value="general", visible=False)
+                        explain_length_opt = gr.Dropdown(label="Length", choices=["brief", "medium", "detailed"], value="medium", visible=False)
+                        
+                        paraphrase_style_opt = gr.Dropdown(label="Style", choices=["formal", "casual", "academic", "simple", "technical"], value="formal", visible=False)
+                        
+                        categories_input_opt = gr.Textbox(label="Categories (comma separated)", placeholder="Technology, Business, Science...", visible=False)
+                        
+                        num_items_opt = gr.Slider(label="Number of Items", minimum=1, maximum=10, value=5, step=1, visible=False)
+                        question_type_opt = gr.Dropdown(label="Question Type", choices=["comprehension", "analysis", "application", "creative", "factual"], value="comprehension", visible=False)
+                        
+                        run_task_btn = gr.Button("🚀 Run Task", variant="primary", size="lg")
+                        
+                    with gr.Column(scale=2):
+                        content_output_display = gr.Textbox(label="Result", lines=25, placeholder="Result will appear here...")
+
+                # Event Handlers
+                task_dropdown.change(
+                    fn=update_options_visibility,
+                    inputs=[task_dropdown],
+                    outputs=[
+                        summary_style_opt, outline_sections_opt, outline_detail_opt,
+                        explain_audience_opt, explain_length_opt, paraphrase_style_opt,
+                        categories_input_opt, num_items_opt, question_type_opt
+                    ]
+                )
+                
+                run_task_btn.click(
+                    fn=execute_content_task,
+                    inputs=[
+                        task_dropdown, doc_dropdown_content, content_text_input,
+                        summary_style_opt, outline_sections_opt, outline_detail_opt,
+                        explain_audience_opt, explain_length_opt, paraphrase_style_opt,
+                        categories_input_opt, num_items_opt, question_type_opt
+                    ],
+                    outputs=[content_output_display]
+                )
 
             with gr.Tab("🏷️ Generate Tags"):
                 with gr.Row():
