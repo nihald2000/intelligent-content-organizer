@@ -7,7 +7,7 @@
 set -e  # Exit on error
 
 ENVIRONMENT=${1:-production}
-APP_NAME="intelligent-content-organizer"
+APP_NAME="AI-Digital-Library-Assistant"
 
 echo "🚀 Deploying $APP_NAME to Blaxel ($ENVIRONMENT environment)..."
 echo ""

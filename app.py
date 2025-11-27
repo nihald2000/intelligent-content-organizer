@@ -648,7 +648,7 @@ def create_gradio_interface():
         summarization, and Q&A capabilities.
 
         👉 Read the full article here:  
-        <a href="https://huggingface.co/blog/Nihal2000/intelligent-content-organizer#empowering-your-data-building-an-intelligent-content-organizer-with-mistral-ai-and-the-model-context-protocol" target="_blank">Building an Intelligent Content Organizer</a>
+        <a href="https://huggingface.co/blog/Nihal2000/AI-Digital-Library-Assistant#empowering-your-data-building-an-ai-digital-library-assistant-with-mistral-ai-and-the-model-context-protocol" target="_blank">Building an AI Digital Library Assistant</a>
 
         ## 🚀 Quick Start:
         1. **Documents in Library** → View your uploaded documents in the "📚 Document Library" tab  
@@ -662,7 +662,7 @@ def create_gradio_interface():
 
         ---
         🔗 For using MCP tools in Claude or other MCP clients, use this endpoint in the config file:  
-         https://agents-mcp-hackathon-intelligent-content-organizer.hf.space/gradio_api/mcp/sse
+         https://agents-mcp-hackathon-AI-Digital-Library-Assistant.hf.space/gradio_api/mcp/sse
         """)
 
 

@@ -27,7 +27,7 @@ tags:
 [![ElevenLabs](https://img.shields.io/badge/ElevenLabs-Voice_AI-orange)](https://elevenlabs.io/)
 [![MCP Ready](https://img.shields.io/badge/MCP-Production_Ready-green)](https://modelcontextprotocol.io/)
 
-**[🔴 LIVE DEMO: Try it on HuggingFace Spaces](https://huggingface.co/spaces/Nihal2000/intelligent-content-organizer-MCP-Agent)**
+**[🔴 LIVE DEMO: Try it on HuggingFace Spaces](https://huggingface.co/spaces/Nihal2000/AI-Digital-Library-Assistant-MCP-Agent)**
 
 ---
 
@@ -47,8 +47,8 @@ The **AI Digital Library Assistant** is not just another document search tool. I
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/nihald2000/intelligent-content-organizer.git
-cd intelligent-content-organizer
+git clone https://github.com/nihald2000/AI-Digital-Library-Assistant.git
+cd AI-Digital-Library-Assistant
 ```
 
 ### 2. Install Dependencies
