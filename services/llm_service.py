@@ -14,12 +14,19 @@ class LLMService:
         
         self.nebius_client = None
         self.mistral_client = None 
+        self.openai_client = None
         
         self._initialize_clients()
     
     def _initialize_clients(self):
         """Initialize LLM clients"""
         try:
+            if self.config.OPENAI_API_KEY:
+                self.openai_client = openai.OpenAI(
+                    api_key=self.config.OPENAI_API_KEY
+                )
+                logger.info("OpenAI client initialized")
+
             if self.config.NEBIUS_API_KEY:
                 self.nebius_client = openai.OpenAI(
                     api_key=self.config.NEBIUS_API_KEY,
@@ -34,7 +41,7 @@ class LLMService:
                 logger.info("Mistral client initialized")
             
             # Check if at least one client is initialized
-            if not any([self.nebius_client, self.mistral_client]):
+            if not any([self.openai_client, self.nebius_client, self.mistral_client]):
                 logger.warning("No LLM clients could be initialized based on current config. Check API keys.")
             else:
                 logger.info("LLM clients initialized successfully (at least one).")
@@ -49,11 +56,15 @@ class LLMService:
             selected_model_name_for_call: str = "" 
 
             if model == "auto":
-                # New Priority: 1. NEBIUS (OpenAI OSS), 2. Mistral
+                # Priority: 1. NEBIUS (Llama 3.3 - Cost Effective), 2. OpenAI (GPT-5.1), 3. Mistral
                 if self.nebius_client and self.config.NEBIUS_MODEL:
                     selected_model_name_for_call = self.config.NEBIUS_MODEL
                     logger.debug(f"Auto-selected NEBIUS model: {selected_model_name_for_call}")
                     return await self._generate_with_nebius(prompt, selected_model_name_for_call, max_tokens, temperature)
+                elif self.openai_client and self.config.OPENAI_MODEL:
+                    selected_model_name_for_call = self.config.OPENAI_MODEL
+                    logger.debug(f"Auto-selected OpenAI model: {selected_model_name_for_call}")
+                    return await self._generate_with_openai(prompt, selected_model_name_for_call, max_tokens, temperature)
                 elif self.mistral_client and self.config.MISTRAL_MODEL:
                     selected_model_name_for_call = self.config.MISTRAL_MODEL
                     logger.debug(f"Auto-selected Mistral model: {selected_model_name_for_call}")
@@ -62,12 +73,28 @@ class LLMService:
                     logger.error("No LLM clients available for 'auto' mode or default models not configured.")
                     raise ValueError("No LLM clients available for 'auto' mode or default models not configured.")
             
-            elif model.startswith("gpt-") or model.startswith("openai/") or model.lower().startswith("nebius/"):
-                if not self.nebius_client:
-                    raise ValueError("NEBIUS client not available. Check API key or model prefix.")
-                actual_model = model.split('/')[-1] if '/' in model else model
-                return await self._generate_with_nebius(prompt, actual_model, max_tokens, temperature)
+            elif model == "fast":
+                 # Priority for speed: 1. OpenAI (GPT-5-mini), 2. Mistral Small, 3. Nebius
+                if self.openai_client and self.config.FAST_MODEL:
+                    return await self._generate_with_openai(prompt, self.config.FAST_MODEL, max_tokens, temperature)
+                # Fallback to auto if fast model not available
+                return await self.generate_text(prompt, "auto", max_tokens, temperature)
+
+            elif model.startswith("gpt-") or model.startswith("openai/") or "o1-" in model or "o3-" in model:
+                if self.openai_client:
+                     actual_model = model.split('/')[-1] if '/' in model else model
+                     return await self._generate_with_openai(prompt, actual_model, max_tokens, temperature)
+                elif self.nebius_client and "gpt-oss" in model: # Handle Nebius "openai/" prefix if any
+                     actual_model = model.split('/')[-1] if '/' in model else model
+                     return await self._generate_with_nebius(prompt, actual_model, max_tokens, temperature)
+                else:
+                     raise ValueError("OpenAI client not available. Check API key.")
             
+            elif model.lower().startswith("nebius/") or model.lower().startswith("meta-llama/"):
+                if not self.nebius_client:
+                    raise ValueError("NEBIUS client not available. Check API key.")
+                return await self._generate_with_nebius(prompt, model, max_tokens, temperature)
+
             elif model.startswith("mistral"):
                 if not self.mistral_client:
                     raise ValueError("Mistral client not available. Check API key or model prefix.")
@@ -78,6 +105,46 @@ class LLMService:
         
         except Exception as e:
             logger.error(f"Error generating text with model '{model}': {str(e)}")
+            raise
+
+    async def _generate_with_openai(self, prompt: str, model_name: str, max_tokens: int, temperature: float) -> str:
+        """Generate text using OpenAI"""
+        if not self.openai_client:
+            raise RuntimeError("OpenAI client not initialized.")
+        try:
+            logger.debug(f"Generating with OpenAI model: {model_name}, max_tokens: {max_tokens}, temp: {temperature}")
+            loop = asyncio.get_event_loop()
+            
+            # Determine correct token parameter based on model family
+            # GPT-5, o1, o3 series use max_completion_tokens
+            use_completion_tokens = any(x in model_name for x in ["gpt-5", "o1-", "o3-"])
+            
+            kwargs = {
+                "model": model_name,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+            
+            if use_completion_tokens:
+                kwargs["max_completion_tokens"] = max_tokens
+                # Reasoning models enforce temperature=1
+                kwargs["temperature"] = 1
+                if temperature != 1:
+                    logger.warning(f"Temperature {temperature} ignored for model {model_name} (requires 1).")
+            else:
+                kwargs["max_tokens"] = max_tokens
+                kwargs["temperature"] = temperature
+
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.openai_client.chat.completions.create(**kwargs)
+            )
+            if response.choices and response.choices[0].message:
+                 content = response.choices[0].message.content
+                 if content is not None:
+                     return content.strip()
+            return ""
+        except Exception as e:
+            logger.error(f"Error with OpenAI generation (model: {model_name}): {str(e)}")
             raise
 
     async def _generate_with_nebius(self, prompt: str, model_name: str, max_tokens: int, temperature: float) -> str:
@@ -181,7 +248,8 @@ class LLMService:
         Tags:"""
         
         try:
-            response = await self.generate_text(prompt, model="auto", max_tokens=100, temperature=0.5)
+            # Use FAST_MODEL for tags
+            response = await self.generate_text(prompt, model="fast", max_tokens=100, temperature=0.5)
             tags = [tag.strip().lower() for tag in response.split(',') if tag.strip()]
             tags = [tag for tag in tags if tag and len(tag) > 1 and len(tag) < 50]
             return list(dict.fromkeys(tags))[:max_tags]
@@ -204,7 +272,8 @@ class LLMService:
         Category:"""
         
         try:
-            response = await self.generate_text(prompt, model="auto", max_tokens=50, temperature=0.1) 
+            # Use FAST_MODEL for categorization
+            response = await self.generate_text(prompt, model="fast", max_tokens=50, temperature=0.1) 
             category_candidate = response.strip().strip("'\"")
             
             for cat in categories:
@@ -310,6 +379,7 @@ Answer:"""
     async def check_availability(self) -> Dict[str, bool]:
         """Check which LLM services are available by making a tiny test call."""
         availability = {
+            "openai": False,
             "nebius": False,
             "mistral": False
         }
@@ -318,6 +388,15 @@ Answer:"""
         test_temp = 0.1
 
         logger.info("Checking LLM availability...")
+
+        if self.openai_client and self.config.OPENAI_MODEL:
+            try:
+                logger.debug(f"Testing OpenAI availability with model {self.config.OPENAI_MODEL}...")
+                test_response = await self._generate_with_openai(test_prompt, self.config.OPENAI_MODEL, test_max_tokens, test_temp)
+                availability["openai"] = bool(test_response.strip())
+            except Exception as e:
+                logger.warning(f"OpenAI availability check failed for model {self.config.OPENAI_MODEL}: {e}")
+        logger.info(f"OpenAI available: {availability['openai']}")
 
         if self.nebius_client and self.config.NEBIUS_MODEL:
             try:

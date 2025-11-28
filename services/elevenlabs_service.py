@@ -68,11 +68,8 @@ class ElevenLabsService:
         
         try:
             # Register the query_documents tool
-            self.client_tools.register(
-                name="query_documents",
-                handler=self._rag_query_tool,
-                is_async=True
-            )
+            # Modern ElevenLabs SDK: register(tool_name, handler=callable)
+            self.client_tools.register("query_documents", handler=self._rag_query_tool)
             
             logger.info("RAG tool 'query_documents' registered successfully")
             
@@ -179,6 +176,37 @@ class ElevenLabsService:
             logger.error(f"Error creating conversation: {str(e)}")
             return None
     
+    async def start_conversation(self, session_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Start a new conversation session (async wrapper for UI)
+        
+        Args:
+            session_id: Optional session ID for tracking
+        
+        Returns:
+            Dictionary with success status and conversation info
+        """
+        try:
+            conversation = self.create_conversation(session_id=session_id)
+            
+            if conversation:
+                return {
+                    "success": True,
+                    "session_id": session_id,
+                    "message": "Conversation started successfully"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Failed to create conversation"
+                }
+        except Exception as e:
+            logger.error(f"Error starting conversation: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
     async def process_voice_query(
         self,
         audio_file_path: str,
@@ -217,7 +245,7 @@ class ElevenLabsService:
                 "error": str(e)
             }
     
-    def end_conversation(self, session_id: str) -> bool:
+    async def end_conversation(self, session_id: str) -> bool:
         """
         End an active conversation session
         
@@ -230,7 +258,17 @@ class ElevenLabsService:
         try:
             if session_id in self.active_conversations:
                 conversation = self.active_conversations[session_id]
-                conversation.end_session()
+                
+                # Try to end the session gracefully
+                try:
+                    conversation.end_session()
+                except AttributeError as ae:
+                    # Handle cases where DefaultAudioInterface doesn't have expected methods
+                    logger.warning(f"Could not cleanly end session: {str(ae)}")
+                except Exception as e:
+                    logger.warning(f"Error during session cleanup: {str(e)}")
+                
+                # Always remove from active conversations
                 del self.active_conversations[session_id]
                 logger.info(f"Ended conversation: {session_id}")
                 return True

@@ -284,7 +284,7 @@ Generate the complete casual podcast script now:"""
             
             # Save transcript
             transcript_path = self.podcast_dir / f"{podcast_id}_transcript.txt"
-            transcript_path.write_text(script.to_text())
+            transcript_path.write_text(script.to_text(), encoding="utf-8")
             
             logger.info(f"Podcast generated successfully: {podcast_id}")
             
@@ -481,6 +481,46 @@ SUMMARY:
         
         return dialogue
     
+    def _get_voice_id(self, voice_name: str) -> str:
+        """
+        Get voice ID from voice name.
+        Falls back to first available voice if not found.
+        
+        Args:
+            voice_name: Voice name (e.g., "Rachel", "Adam")
+        
+        Returns:
+            Voice ID string
+        """
+        try:
+            # Try to get voices and find by name
+            voices = self.elevenlabs_client.voices.get_all()
+            
+            if not voices or not voices.voices:
+                logger.error("No voices available from ElevenLabs")
+                raise RuntimeError("No voices available")
+            
+            # First, try exact name match
+            for voice in voices.voices:
+                if voice.name.lower() == voice_name.lower():
+                    logger.info(f"Found exact voice match for '{voice_name}': {voice.voice_id}")
+                    return voice.voice_id
+            
+            # Try partial match
+            for voice in voices.voices:
+                if voice_name.lower() in voice.name.lower():
+                    logger.info(f"Found partial voice match for '{voice_name}': {voice.name} ({voice.voice_id})")
+                    return voice.voice_id
+            
+            # Use first available voice as fallback
+            first_voice = voices.voices[0]
+            logger.warning(f"Voice '{voice_name}' not found, using first available voice: {first_voice.name} ({first_voice.voice_id})")
+            return first_voice.voice_id
+            
+        except Exception as e:
+            logger.error(f"Could not fetch voices: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to get voice ID: {str(e)}")
+    
     async def synthesize_audio(
         self,
         podcast_id: str,
@@ -509,33 +549,39 @@ SUMMARY:
         # In production, you'd combine segments with pauses
         full_text = script.to_text()
         
+        # Get actual voice ID
+        voice_id = self._get_voice_id(host1_voice)
+        
         try:
-            # Use ElevenLabs TTS
-            # Note: This is a simplified version. Full implementation would:
-            # 1. Process each dialogue line separately
-            # 2. Use different voices for HOST1 and HOST2
-            # 3. Add pauses between lines
-            # 4. Combine audio segments
+            # Use modern ElevenLabs TTS API
+            # Note: This is a simplified version using single voice
+            # Full implementation would process each line separately with different voices
             
-            audio = self.elevenlabs_client.generate(
+            logger.info(f"Generating audio with voice: {host1_voice}")
+            
+            # Use the modern text_to_speech API
+            audio_generator = self.elevenlabs_client.text_to_speech.convert(
+                voice_id=voice_id,  # Using resolved voice ID
                 text=full_text,
-                voice=host1_voice,
-                model="eleven_multilingual_v2"
+                model_id="eleven_multilingual_v2"
             )
             
-            # Save audio file
+            # Write audio chunks to file
             with open(audio_file, 'wb') as f:
-                for chunk in audio:
-                    f.write(chunk)
+                for chunk in audio_generator:
+                    if chunk:
+                        f.write(chunk)
             
-            logger.info(f"Audio synthesized: {audio_file}")
-            return audio_file
+            # Verify file was created with content
+            if audio_file.exists() and audio_file.stat().st_size > 1000:
+                logger.info(f"Audio synthesized successfully: {audio_file} ({audio_file.stat().st_size} bytes)")
+                return audio_file
+            else:
+                raise RuntimeError(f"Generated audio file is too small or empty: {audio_file.stat().st_size} bytes")
             
         except Exception as e:
-            logger.error(f"Audio synthesis failed: {e}")
-            # Create placeholder file
-            audio_file.write_text("Audio generation placeholder")
-            return audio_file
+            logger.error(f"Audio synthesis failed: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to generate podcast audio: {str(e)}")
     
     def _create_metadata(
         self,

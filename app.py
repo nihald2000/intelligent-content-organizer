@@ -587,7 +587,8 @@ def delete_document_from_library(document_id):
             gr.update(choices=doc_choices_error)
         )
 
-        voice_conversation_state = {
+# Voice conversation state - global scope
+voice_conversation_state = {
     "session_id": None,
     "active": False,
     "transcript": []
@@ -616,14 +617,14 @@ def start_voice_conversation():
                 "🎙️ Voice assistant is ready. Type your question below.",
                 gr.update(interactive=False),
                 gr.update(interactive=True),
-                ""
+                []
             )
         else:
             return (
                 f"❌ Failed to start conversation: {result.get('error')}",
                 gr.update(interactive=True),
                 gr.update(interactive=False),
-                ""
+                []
             )
     except Exception as e:
         logger.error(f"Error starting voice conversation: {str(e)}")
@@ -631,8 +632,9 @@ def start_voice_conversation():
             f"❌ Error: {str(e)}",
             gr.update(interactive=True),
             gr.update(interactive=False),
-            ""
+            []
         )
+
 
 def stop_voice_conversation():
     """Stop active voice conversation"""
@@ -642,7 +644,7 @@ def stop_voice_conversation():
                 "No active conversation",
                 gr.update(interactive=True),
                 gr.update(interactive=False),
-                format_transcript(voice_conversation_state["transcript"])
+                voice_conversation_state["transcript"]
             )
         
         session_id = voice_conversation_state["session_id"]
@@ -656,7 +658,7 @@ def stop_voice_conversation():
             "✅ Conversation ended",
             gr.update(interactive=True),
             gr.update(interactive=False),
-            format_transcript(voice_conversation_state["transcript"])
+            voice_conversation_state["transcript"]
         )
     except Exception as e:
         logger.error(f"Error stopping conversation: {str(e)}")
@@ -664,8 +666,9 @@ def stop_voice_conversation():
             f"❌ Error: {str(e)}",
             gr.update(interactive=True),
             gr.update(interactive=False),
-            format_transcript(voice_conversation_state["transcript"])
+            voice_conversation_state["transcript"]
         )
+
 
 def send_voice_message(message):
     """Send a text message in voice conversation"""
@@ -712,6 +715,41 @@ def clear_voice_transcript():
     voice_conversation_state["transcript"] = []
     return ""
 
+def send_voice_message_v6(message, chat_history):
+    """Send message in voice conversation - Gradio 6 format"""
+    try:
+        if not voice_conversation_state["active"]:
+            return chat_history, ""
+        
+        if not message or not message.strip():
+            return chat_history, message
+        
+        session_id = voice_conversation_state["session_id"]
+        
+        # Add user message in Gradio 6 format
+        chat_history.append({"role": "user", "content": message})
+        
+        # Get AI response
+        result = mcp_server.run_async(mcp_server.voice_tool.voice_qa(message, session_id))
+        
+        if result.get("success"):
+            answer = result.get("answer", "No response")
+            chat_history.append({"role": "assistant", "content": answer})
+        else:
+            chat_history.append({
+                "role": "assistant",
+                "content": f"❌ Error: {result.get('error')}"
+            })
+        
+        return chat_history, ""
+    except Exception as e:
+        logger.error(f"Error in voice message: {str(e)}")
+        chat_history.append({
+            "role": "assistant",
+            "content": f"❌ Error: {str(e)}"
+        })
+        return chat_history, ""
+
 def generate_podcast_ui(doc_ids, style, duration, voice1, voice2):
     """UI wrapper for podcast generation"""
     try:
@@ -749,33 +787,134 @@ def generate_podcast_ui(doc_ids, style, duration, voice1, voice2):
         logger.error(f"Podcast UI error: {str(e)}")
         return (f"❌ Error: {str(e)}", None, "An error occurred", "")
 
+def load_dashboard_stats():
+    """Load dashboard statistics for the UI"""
+    try:
+        # Get document list
+        docs_result = mcp_server.list_documents_sync(limit=1000)
+        doc_count = 0
+        total_chunks = 0
+        total_size = 0
+        recent_data = []
+        
+        if docs_result.get("success"):
+            documents = docs_result.get("documents", [])
+            doc_count = len(documents)
+            total_chunks = sum(doc.get("metadata", {}).get("chunk_count", 0) for doc in documents)
+            total_size = sum(doc.get("file_size", 0) for doc in documents)
+            storage_mb = round(total_size / (1024 * 1024), 2) if total_size > 0 else 0.0
+            
+            # Get recent 5 documents
+            recent = documents[:5]
+            recent_data = [
+                [
+                    doc.get("filename", "Unknown"), 
+                    doc.get("doc_type", "unknown"), 
+                    doc.get("created_at", "")[:10] if doc.get("created_at") else "N/A", 
+                    f"{doc.get('file_size', 0)} bytes"
+                ]
+                for doc in recent
+            ]
+        else:
+            storage_mb = 0.0
+        
+        # Service status indicators
+        vector_stat = "✅ Online" if getattr(mcp_server, "vector_store", None) else "❌ Offline"
+        llm_stat = "✅ Ready" if getattr(mcp_server, "llm_service", None) else "❌ Offline"
+        voice_stat = "✅ Ready" if (getattr(mcp_server, "elevenlabs_service", None) and mcp_server.elevenlabs_service.is_available()) else "⚠️ Configure API Key"
+        
+        return (
+            doc_count,
+            total_chunks,
+            storage_mb,
+            recent_data,
+            vector_stat,
+            llm_stat,
+            voice_stat,
+        )
+    except Exception as e:
+        logger.error(f"Error loading dashboard stats: {str(e)}")
+        return (0, 0, 0.0, [], "❌ Error", "❌ Error", "❌ Error")
+
 def create_gradio_interface():
-    with gr.Blocks(title="🧠 Intelligent Content Organizer MCP Agent", theme=gr.themes.Soft()) as interface:
-        gr.Markdown("""
-        # 🧠 Intelligent Content Organizer MCP Agent
-        A powerful MCP (Model Context Protocol) server for intelligent content management with semantic search, 
-        summarization, and Q&A capabilities.
-
-        👉 Read the full article here:  
-        <a href="https://huggingface.co/blog/Nihal2000/AI-Digital-Library-Assistant#empowering-your-data-building-an-ai-digital-library-assistant-with-mistral-ai-and-the-model-context-protocol" target="_blank">Building an AI Digital Library Assistant</a>
-
-        ## 🚀 Quick Start:
-        1. **Documents in Library** → View your uploaded documents in the "📚 Document Library" tab  
-        2. **Upload Documents** → Go to "📄 Upload Documents" tab  
-        3. **Search Your Content** → Use "🔍 Search Documents" to find information  
-        4. **Get Summaries** → Select any document in "📝 Summarize" tab  
-        5. **Generate Tags** → Auto-generate tags for your documents in "🏷️ Generate Tags" tab  
-        6. **Ask Questions** → Get answers from your documents in "❓ Ask Questions" tab  
-        7. **Delete Documents** → Remove documents from your library in "📚 Document Library" tab  
-        8. **Refresh Library** → Click the 🔄 button to refresh the document list  
-
-        ---
-        🔗 For using MCP tools in Claude or other MCP clients, use this endpoint in the config file:  
-         https://agents-mcp-hackathon-AI-Digital-Library-Assistant.hf.space/gradio_api/mcp/sse
-        """)
-
-
+    # Create custom theme with modern aesthetics
+    custom_theme = gr.themes.Soft(
+        primary_hue=gr.themes.colors.indigo,
+        secondary_hue=gr.themes.colors.blue,
+        neutral_hue=gr.themes.colors.slate,
+        font=[gr.themes.GoogleFont("Inter"), "system-ui", "sans-serif"],
+        font_mono=[gr.themes.GoogleFont("Fira Code"), "monospace"],
+    ).set(
+        button_primary_background_fill="*primary_500",
+        button_primary_background_fill_hover="*primary_600",
+        block_title_text_weight="600",
+        block_label_text_size="sm",
+        block_label_text_weight="500",
+    )
+    
+    with gr.Blocks(title="🧠 AI Digital Library Assistant", theme=custom_theme) as interface:
         with gr.Tabs():
+            # Dashboard Tab - New Landing Page
+            with gr.Tab("🏠 Dashboard"):
+                gr.Markdown("# Welcome to Your AI Library Assistant")
+                gr.Markdown("*Your intelligent document management and analysis platform powered by AI*")
+                
+                # Quick Stats Section
+                gr.Markdown("## 📊 Quick Stats")
+                with gr.Row():
+                    total_docs = gr.Number(
+                        label="📚 Total Documents",
+                        value=0,
+                        interactive=False,
+                        container=True
+                    )
+                    total_chunks = gr.Number(
+                        label="🧩 Vector Chunks",
+                        value=0,
+                        interactive=False,
+                        container=True
+                    )
+                    storage_size = gr.Number(
+                        label="💾 Storage (MB)",
+                        value=0,
+                        interactive=False,
+                        container=True
+                    )
+                
+                # Recent Activity Section
+                gr.Markdown("## 📊 Recent Activity")
+                with gr.Group():
+                    recent_docs = gr.Dataframe(
+                        headers=["Document", "Type", "Date", "Size"],
+                        datatype=["str", "str", "str", "str"],
+                        row_count=(5, "fixed"),
+                        col_count=(4, "fixed"),
+                        interactive=False,
+                        label="Recently Added Documents"
+                    )
+                
+                # System Status Section
+                gr.Markdown("## � System Status")
+                with gr.Row():
+                    vector_status = gr.Textbox(
+                        label="Vector Store",
+                        value="✅ Online",
+                        interactive=False,
+                        container=True
+                    )
+                    llm_status = gr.Textbox(
+                        label="LLM Service",
+                        value="✅ Ready",
+                        interactive=False,
+                        container=True
+                    )
+                    voice_status = gr.Textbox(
+                        label="Voice Service",
+                        value="⚠️ Configure API Key",
+                        interactive=False,
+                        container=True
+                    )
+            
             with gr.Tab("📚 Document Library"):
                 with gr.Row():
                     with gr.Column():
@@ -787,68 +926,194 @@ def create_gradio_interface():
                         delete_output_display = gr.Textbox(label="Delete Status", visible=True)
             
             with gr.Tab("📄 Upload Documents"):
+                gr.Markdown("""
+                ### 📥 Add Documents to Library
+                Upload PDFs, Word documents, text files, or images. OCR will extract text from images automatically.
+                """)
+                
                 with gr.Row():
                     with gr.Column():
-                        gr.Markdown("### Add Documents to Your Library")
-                        file_input_upload = gr.File(label="Select Document to Upload", file_types=[".pdf", ".txt", ".docx", ".png", ".jpg", ".jpeg"], type="filepath")
-                        upload_btn_process = gr.Button("🚀 Process & Add to Library", variant="primary", size="lg")
-                    with gr.Column():
-                        upload_output_display = gr.Textbox(label="Processing Result", lines=6, placeholder="Upload a document to see processing results...")
-                        doc_id_output_display = gr.Textbox(label="Document ID", placeholder="Document ID will appear here after processing...")
+                        with gr.Group():
+                            gr.Markdown("**Supported formats:** PDF, DOCX, TXT, Images (JPG, PNG)")
+                            file_input_upload = gr.File(
+                                label="Select File",
+                                file_types=[".pdf", ".txt", ".docx", ".png", ".jpg", ".jpeg"],
+                                type="filepath",
+                                file_count="single"
+                            )
+                            
+                            upload_btn_process = gr.Button("🚀 Upload & Process", variant="primary", size="lg")
+
+                        
+                        with gr.Group():
+                            upload_output_display = gr.Textbox(
+                                label="Status",
+                                lines=6,
+                                interactive=False,
+                                show_copy_button=False
+                            )
+                            
+                            doc_id_output_display = gr.Textbox(
+                                label="Document ID",
+                                interactive=False,
+                                visible=False
+                            )
+
 
             with gr.Tab("🔍 Search Documents"):
+                gr.Markdown("""
+                ### 🔎 Semantic Search
+                Find relevant content across your entire document library using AI-powered semantic search.
+                """)
+                
                 with gr.Row():
                     with gr.Column(scale=1):
-                        gr.Markdown("### Search Your Document Library")
-                        search_query_input = gr.Textbox(label="What are you looking for?", placeholder="Enter your search query...", lines=2)
-                        search_top_k_slider = gr.Slider(label="Number of Results", minimum=1, maximum=20, value=5, step=1)
-                        search_btn_action = gr.Button("🔍 Search Library", variant="primary", size="lg")
+                        with gr.Group():
+                            search_query_input = gr.Textbox(
+                                label="Search Query",
+                                placeholder="What are you looking for?",
+                                lines=2,
+                                info="Use natural language to describe what you need"
+                            )
+                            
+                            with gr.Accordion("🎛️ Search Options", open=False):
+                                search_top_k_slider = gr.Slider(
+                                    label="Number of Results",
+                                    minimum=1, maximum=20, value=5, step=1,
+                                    info="More results = broader search"
+                                )
+                            
+                            search_btn_action = gr.Button("🔍 Search", variant="primary", size="lg")
+                    
                     with gr.Column(scale=2):
-                        search_output_display = gr.Textbox(label="Search Results", lines=20, placeholder="Search results will appear here...")
+                        with gr.Group():
+                            search_output_display = gr.Textbox(
+                                label="Results",
+                                lines=20,
+                                placeholder="Search results will appear here...",
+                                show_copy_button=True
+                            )
+
             
             with gr.Tab("📝 Content Studio"):
+                gr.Markdown("""
+                ### 🎨 Create & Analyze Content
+                Transform documents with AI-powered tools: summarize, outline, explain, and more.
+                """)
+                
                 with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("### 🎨 Create & Analyze Content")
+                    with gr.Column(scale=2):
+                        # Source Selection with Group
+                        with gr.Group():
+                            gr.Markdown("#### 📄 Content Source")
+                            doc_dropdown_content = gr.Dropdown(
+                                label="Select Document",
+                                choices=get_document_choices(),
+                                value=None,
+                                interactive=True,
+                                info="Choose a document from your library"
+                            )
+                            
+                            gr.Markdown("**OR**")
+                            
+                            content_text_input = gr.Textbox(
+                                label="Enter Text or Topic",
+                                placeholder="Paste content or enter a topic...",
+                                lines=4,
+                                info="For outlines, enter a topic. For other tasks, paste text to analyze."
+                            )
                         
-                        # Source Selection
-                        doc_dropdown_content = gr.Dropdown(label="Select Document", choices=get_document_choices(), value=None, interactive=True)
-                        content_text_input = gr.Textbox(label="Or Enter Text / Topic", placeholder="Paste text to analyze, or enter a topic for outlines...", lines=5)
+                        # Task Configuration with Group
+                        with gr.Group():
+                            gr.Markdown("#### 🛠️ Task Configuration")
+                            task_dropdown = gr.Dropdown(
+                                label="Select Task",
+                                choices=[
+                                    "Summarize", "Generate Outline", "Explain Concept",
+                                    "Paraphrase", "Categorize", "Key Insights",
+                                    "Generate Questions", "Extract Key Info"
+                                ],
+                                value="Summarize",
+                                interactive=True,
+                                info="Choose the type of analysis to perform"
+                            )
                         
-                        gr.Markdown("---")
-                        
-                        # Task Selection
-                        task_dropdown = gr.Dropdown(
-                            label="Select Task",
-                            choices=[
-                                "Summarize", "Generate Outline", "Explain Concept", 
-                                "Paraphrase", "Categorize", "Key Insights", 
-                                "Generate Questions", "Extract Key Info"
-                            ],
-                            value="Summarize",
-                            interactive=True
-                        )
-                        
-                        # Dynamic Options
-                        summary_style_opt = gr.Dropdown(label="Summary Style", choices=["concise", "detailed", "bullet_points", "executive"], value="concise", visible=True)
-                        
-                        outline_sections_opt = gr.Slider(label="Number of Sections", minimum=3, maximum=10, value=5, step=1, visible=False)
-                        outline_detail_opt = gr.Dropdown(label="Detail Level", choices=["brief", "medium", "detailed"], value="medium", visible=False)
-                        
-                        explain_audience_opt = gr.Dropdown(label="Target Audience", choices=["general", "technical", "beginner", "expert"], value="general", visible=False)
-                        explain_length_opt = gr.Dropdown(label="Length", choices=["brief", "medium", "detailed"], value="medium", visible=False)
-                        
-                        paraphrase_style_opt = gr.Dropdown(label="Style", choices=["formal", "casual", "academic", "simple", "technical"], value="formal", visible=False)
-                        
-                        categories_input_opt = gr.Textbox(label="Categories (comma separated)", placeholder="Technology, Business, Science...", visible=False)
-                        
-                        num_items_opt = gr.Slider(label="Number of Items", minimum=1, maximum=10, value=5, step=1, visible=False)
-                        question_type_opt = gr.Dropdown(label="Question Type", choices=["comprehension", "analysis", "application", "creative", "factual"], value="comprehension", visible=False)
+                        # Dynamic Options with Accordion
+                        with gr.Accordion("⚙️ Advanced Options", open=False):
+                            summary_style_opt = gr.Dropdown(
+                                label="Summary Style",
+                                choices=["concise", "detailed", "bullet_points", "executive"],
+                                value="concise",
+                                visible=True,
+                                info="How detailed should the summary be?"
+                            )
+                            
+                            outline_sections_opt = gr.Slider(
+                                label="Number of Sections",
+                                minimum=3, maximum=10, value=5, step=1,
+                                visible=False,
+                                info="How many main sections?"
+                            )
+                            outline_detail_opt = gr.Dropdown(
+                                label="Detail Level",
+                                choices=["brief", "medium", "detailed"],
+                                value="medium",
+                                visible=False
+                            )
+                            
+                            explain_audience_opt = gr.Dropdown(
+                                label="Target Audience",
+                                choices=["general", "technical", "beginner", "expert"],
+                                value="general",
+                                visible=False,
+                                info="Who is this explanation for?"
+                            )
+                            explain_length_opt = gr.Dropdown(
+                                label="Length",
+                                choices=["brief", "medium", "detailed"],
+                                value="medium",
+                                visible=False
+                            )
+                            
+                            paraphrase_style_opt = gr.Dropdown(
+                                label="Style",
+                                choices=["formal", "casual", "academic", "simple", "technical"],
+                                value="formal",
+                                visible=False,
+                                info="Writing style for paraphrasing"
+                            )
+                            
+                            categories_input_opt = gr.Textbox(
+                                label="Categories (comma separated)",
+                                placeholder="Technology, Business, Science...",
+                                visible=False
+                            )
+                            
+                            num_items_opt = gr.Slider(
+                                label="Number of Items",
+                                minimum=1, maximum=10, value=5, step=1,
+                                visible=False
+                            )
+                            question_type_opt = gr.Dropdown(
+                                label="Question Type",
+                                choices=["comprehension", "analysis", "application", "creative", "factual"],
+                                value="comprehension",
+                                visible=False
+                            )
                         
                         run_task_btn = gr.Button("🚀 Run Task", variant="primary", size="lg")
-                        
-                    with gr.Column(scale=2):
-                        content_output_display = gr.Textbox(label="Result", lines=25, placeholder="Result will appear here...")
+                    
+                    with gr.Column(scale=3):
+                        # Results with copy button and Group
+                        with gr.Group():
+                            gr.Markdown("#### 📊 Result")
+                            content_output_display = gr.Textbox(
+                                label="",
+                                lines=25,
+                                placeholder="Results will appear here...",
+                                show_copy_button=True,
+                                container=False
+                            )
 
                 # Event Handlers
                 task_dropdown.change(
@@ -884,121 +1149,135 @@ def create_gradio_interface():
                         tag_output_display = gr.Textbox(label="Generated Tags", lines=10, placeholder="Tags will appear here...")
 
             with gr.Tab("🎙️ Voice Assistant"):
+                gr.Markdown("""
+                ### 🗣️ Talk to Your AI Librarian
+                
+                Have a natural conversation about your documents. Ask questions, request summaries,
+                or explore your content library through voice-powered interaction.
+                
+                **Note:** Requires ElevenLabs API configuration.
+                """)
+                
                 with gr.Row():
-                    with gr.Column():
-                        gr.Markdown("""### Voice-Powered AI Librarian
-                        Talk to your AI librarian! Ask questions about your documents 
-                        using natural conversation. The assistant has direct access to 
-                        your document library through advanced RAG technology.
+                    with gr.Column(scale=2):
+                        # Status and Controls
+                        with gr.Group():
+                            voice_status_display = gr.Textbox(
+                                label="Status",
+                                value="Ready to start",
+                                interactive=False,
+                                lines=2
+                            )
+                            
+                            with gr.Row():
+                                start_voice_btn = gr.Button("🎤 Start Conversation", variant="primary", size="lg")
+                                stop_voice_btn = gr.Button("⏹️ Stop", variant="stop", size="lg", interactive=False)
                         
-                        **Note**: Requires ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID in .env
-                        """)
-                        
-                        voice_status_display = gr.Textbox(
-                            label="Status",
-                            value="Ready to start",
-                            interactive=False,
-                            lines=2
-                        )
-                        
-                        with gr.Row():
-                            start_voice_btn = gr.Button("🎤 Start Conversation", variant="primary", size="lg")
-                            stop_voice_btn = gr.Button("⏹️ Stop", variant="stop", size="lg", interactive=False)
-                        
-                        gr.Markdown("### Type Your Question")
-                        voice_input_text = gr.Textbox(
-                            label="Message",
-                            placeholder="Type your question here and press Enter...",
-                            lines=3
-                        )
-                        send_voice_btn = gr.Button("📤 Send Message", variant="secondary")
-                        
-                    with gr.Column():
-                        gr.Markdown("### Conversation Transcript")
-                        voice_transcript_display = gr.Markdown(
-                            value="No conversation yet. Start talking to the AI librarian!",
-                            label="Transcript"
-                        )
-                        clear_transcript_btn = gr.Button("🗑️ Clear Transcript", variant="secondary")
+                        # Message Input
+                        with gr.Group():
+                            gr.Markdown("#### 💬 Send Message")
+                            voice_input_text = gr.Textbox(
+                                label="",
+                                placeholder="Type your question...",
+                                lines=3,
+                                container=False,
+                                info="Press Enter or click Send"
+                            )
+                            send_voice_btn = gr.Button("📤 Send", variant="secondary")
+                    
+                    with gr.Column(scale=3):
+                        # Chat Interface with Gradio 6 Chatbot
+                        with gr.Group():
+                            voice_chatbot = gr.Chatbot(
+                                label="Conversation",
+                                type="messages",
+                                height=500,
+                                show_copy_button=True
+                            )
+                            
+                            clear_chat_btn = gr.Button("🗑️ Clear Chat", variant="secondary")
                 
                 # Voice Assistant event handlers
                 start_voice_btn.click(
                     fn=start_voice_conversation,
-                    outputs=[voice_status_display, start_voice_btn, stop_voice_btn, voice_transcript_display]
+                    outputs=[voice_status_display, start_voice_btn, stop_voice_btn, voice_chatbot]
                 )
                 
                 stop_voice_btn.click(
                     fn=stop_voice_conversation,
-                    outputs=[voice_status_display, start_voice_btn, stop_voice_btn, voice_transcript_display]
+                    outputs=[voice_status_display, start_voice_btn, stop_voice_btn, voice_chatbot]
                 )
                 
                 send_voice_btn.click(
-                    fn=send_voice_message,
-                    inputs=[voice_input_text],
-                    outputs=[voice_status_display, voice_input_text, voice_transcript_display]
+                    fn=send_voice_message_v6,
+                    inputs=[voice_input_text, voice_chatbot],
+                    outputs=[voice_chatbot, voice_input_text]
                 )
                 
                 voice_input_text.submit(
-                    fn=send_voice_message,
-                    inputs=[voice_input_text],
-                    outputs=[voice_status_display, voice_input_text, voice_transcript_display]
+                    fn=send_voice_message_v6,
+                    inputs=[voice_input_text, voice_chatbot],
+                    outputs=[voice_chatbot, voice_input_text]
                 )
                 
-                clear_transcript_btn.click(
-                    fn=clear_voice_transcript,
-                    outputs=[voice_transcript_display]
+                clear_chat_btn.click(
+                    fn=lambda: [],
+                    outputs=[voice_chatbot]
                 )
 
             with gr.Tab("🎧 Podcast Studio"):
-                gr.Markdown("""### Transform Documents into Podcasts 🎙️
+                gr.Markdown("""
+                ### 🎙️ AI-Powered Podcast Generation
                 
-                Select documents from your library and generate engaging conversational podcasts 
-                powered by AI. Choose from different styles and voices to create the perfect listening experience.
+                Transform your documents into engaging audio conversations. Select documents,
+                customize the style and voices, and let AI create a professional podcast.
                 
-                **Features:**
-                - 🎭 4 podcast styles (Conversational, Educational, Technical, Casual)
-                - 🗣️ Multiple voice options for hosts
-                - ⏱️ Customizable duration (5-30 minutes)
-                - 📝 Full transcript generation
-                - 🎵 Professional audio synthesis via ElevenLabs
+                **Powered by:** ElevenLabs AI Voice Technology
                 """)
                 
                 with gr.Row():
-                    with gr.Column():
-                        gr.Markdown("### Configuration")
-                        
-                        podcast_doc_selector = gr.CheckboxGroup(
-                            choices=get_document_choices(),
-                            label="📚 Select Documents for Podcast",
-                            info="Choose one or more documents to discuss"
-                        )
-                        
-                        with gr.Row():
-                            podcast_style = gr.Dropdown(
-                                choices=["conversational", "educational", "technical", "casual"],
-                                value="conversational",
-                                label="🎭 Podcast Style",
-                                info="Conversational: Friendly chat | Educational: Teacher-student | Technical: Expert interview | Casual: Fun discussion"
-                            )
-                            podcast_duration = gr.Slider(
-                                minimum=5,
-                                maximum=30,
-                                value=10,
-                                step=5,
-                                label="⏱️ Duration (minutes)"
+                    with gr.Column(scale=2):
+                        # Configuration Panel
+                        with gr.Group():
+                            gr.Markdown("#### 📚 Select Content")
+                            
+                            podcast_doc_selector = gr.CheckboxGroup(
+                                choices=get_document_choices(),
+                                label="Documents to Include",
+                                info="Choose 1-5 documents for best results",
+                                interactive=True
                             )
                         
-                        with gr.Row():
-                            host1_voice_selector = gr.Dropdown(
-                                choices=["Rachel", "Adam", "Domi", "Bella", "Antoni", "Elli", "Josh"],
-                                value="Rachel",
-                                label="🗣️ Host 1 Voice"
-                            )
-                            host2_voice_selector = gr.Dropdown(
-                                choices=["Adam", "Rachel", "Josh", "Sam", "Emily", "Antoni", "Arnold"],
-                                value="Adam",
-                                label="🗣️ Host 2 Voice"
-                            )
+                        with gr.Accordion("🎨 Podcast Settings", open=True):
+                            with gr.Row():
+                                podcast_style = gr.Dropdown(
+                                    label="Style",
+                                    choices=["conversational", "educational", "technical", "casual"],
+                                    value="conversational",
+                                    info="Sets the tone and format"
+                                )
+                                
+                                podcast_duration = gr.Slider(
+                                    label="Duration (minutes)",
+                                    minimum=5,
+                                    maximum=30,
+                                    value=10,
+                                    step=5,
+                                    info="Approximate length"
+                                )
+                            
+                            gr.Markdown("#### 🗣️ Voice Selection")
+                            with gr.Row():
+                                host1_voice_selector = gr.Dropdown(
+                                    label="Host 1",
+                                    choices=["Rachel", "Adam", "Domi", "Bella", "Antoni", "Elli", "Josh"],
+                                    value="Rachel"
+                                )
+                                host2_voice_selector = gr.Dropdown(
+                                    label="Host 2",
+                                    choices=["Adam", "Rachel", "Josh", "Sam", "Emily", "Antoni", "Arnold"],
+                                    value="Adam"
+                                )
                         
                         generate_podcast_btn = gr.Button(
                             "🎙️ Generate Podcast",
@@ -1018,17 +1297,23 @@ def create_gradio_interface():
                             visible=False
                         )
                     
-                    with gr.Column():
-                        gr.Markdown("### Generated Podcast")
+                    with gr.Column(scale=3):
+                        # Output Panel
+                        with gr.Group():
+                            gr.Markdown("#### 🎵 Generated Podcast")
+                            
+                            podcast_audio_player = gr.Audio(
+                                label="",
+                                type="filepath",
+                                interactive=False,
+                                autoplay=True,
+                                container=False
+                            )
                         
-                        podcast_audio_player = gr.Audio(
-                            label="🎵 Podcast Audio",
-                            type="filepath"
-                        )
-                        
-                        podcast_transcript_display = gr.Markdown(
-                            value="*Transcript will appear here after generation...*"
-                        )
+                        with gr.Accordion("📝 Transcript", open=False):
+                            podcast_transcript_display = gr.Markdown(
+                                value="*Transcript will appear after generation...*"
+                            )
                 
                 # Event handlers
                 generate_podcast_btn.click(
@@ -1059,7 +1344,7 @@ def create_gradio_interface():
                     with gr.Column():
                         qa_output_display = gr.Textbox(label="AI Answer", lines=20, placeholder="Answer will appear here with sources...")
 
-        all_dropdowns_to_update = [delete_doc_dropdown_visible, doc_dropdown_sum_visible, doc_dropdown_tag_visible]
+        all_dropdowns_to_update = [delete_doc_dropdown_visible, doc_dropdown_content, doc_dropdown_tag_visible]
         
         refresh_outputs = [document_list_display] + [dd for dd in all_dropdowns_to_update]
         refresh_btn_library.click(fn=refresh_library, outputs=refresh_outputs)
@@ -1071,10 +1356,16 @@ def create_gradio_interface():
         delete_btn.click(delete_document_from_library, inputs=[delete_doc_dropdown_visible], outputs=delete_outputs)
         
         search_btn_action.click(perform_search, inputs=[search_query_input, search_top_k_slider], outputs=[search_output_display])
-        summarize_btn_action.click(summarize_document, inputs=[doc_dropdown_sum_visible, summary_text_input, summary_style_dropdown], outputs=[summary_output_display])
         tag_btn_action.click(generate_tags_for_document, inputs=[doc_dropdown_tag_visible, tag_text_input, max_tags_slider], outputs=[tag_output_display])
         qa_btn_action.click(ask_question, inputs=[qa_question_input], outputs=[qa_output_display])
 
+
+        # Load dashboard stats on interface load
+        interface.load(
+            fn=load_dashboard_stats,
+            outputs=[total_docs, total_chunks, storage_size, recent_docs, vector_status, llm_status, voice_status]
+        )
+        
         interface.load(fn=refresh_library, outputs=refresh_outputs)
         return interface           
 

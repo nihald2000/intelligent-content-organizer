@@ -203,6 +203,11 @@ class GenerativeTool:
             - **{concept2}**: [description]
             - **Key Difference**: [summary]
             
+            For each aspect, provide:
+            - **{concept1}**: [description]
+            - **{concept2}**: [description]
+            - **Key Difference**: [summary]
+            
             Concepts to compare:
             1. {concept1}
             2. {concept2}
@@ -217,7 +222,7 @@ class GenerativeTool:
         except Exception as e:
             logger.error(f"Error comparing concepts: {str(e)}")
             return f"Error comparing concepts: {str(e)}"
-    
+
     async def generate_questions(self, content: str, question_type: str = "comprehension", num_questions: int = 5) -> List[str]:
         """Generate questions based on the provided content"""
         try:
@@ -267,13 +272,73 @@ class GenerativeTool:
         except Exception as e:
             logger.error(f"Error generating questions: {str(e)}")
             return []
-    
+
+    def _chunk_text(self, text: str, chunk_size: int = 2000) -> List[str]:
+        """Split text into chunks respecting paragraph boundaries"""
+        if len(text) <= chunk_size:
+            return [text]
+            
+        chunks = []
+        current_chunk = ""
+        
+        # Split by paragraphs first
+        paragraphs = text.split('\n\n')
+        
+        for para in paragraphs:
+            if len(current_chunk) + len(para) + 2 <= chunk_size:
+                current_chunk += para + "\n\n"
+            else:
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+                current_chunk = para + "\n\n"
+                
+                # If a single paragraph is too long, split it by sentences
+                if len(current_chunk) > chunk_size:
+                    # Reset current_chunk and split the long paragraph
+                    long_para = current_chunk.strip()
+                    current_chunk = ""
+                    
+                    sentences = long_para.replace('. ', '.\n').split('\n')
+                    sub_chunk = ""
+                    for sentence in sentences:
+                        if len(sub_chunk) + len(sentence) + 1 <= chunk_size:
+                            sub_chunk += sentence + " "
+                        else:
+                            if sub_chunk:
+                                chunks.append(sub_chunk.strip())
+                            sub_chunk = sentence + " "
+                    if sub_chunk:
+                        current_chunk = sub_chunk # Carry over remaining part
+        
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+            
+        return chunks
+
     async def paraphrase_text(self, text: str, style: str = "formal", preserve_meaning: bool = True) -> str:
         """Paraphrase text in a different style while preserving meaning"""
         try:
             if not text.strip():
                 return "No text provided for paraphrasing."
             
+            # Check length and chunk if necessary
+            MAX_CHUNK_SIZE = 2500
+            if len(text) > MAX_CHUNK_SIZE:
+                logger.info(f"Text length {len(text)} exceeds limit, chunking...")
+                chunks = self._chunk_text(text, MAX_CHUNK_SIZE)
+                logger.info(f"Split into {len(chunks)} chunks")
+                
+                paraphrased_chunks = []
+                for i, chunk in enumerate(chunks):
+                    logger.info(f"Processing chunk {i+1}/{len(chunks)}")
+                    # Process chunk
+                    chunk_result = await self.paraphrase_text(chunk, style, preserve_meaning)
+                    paraphrased_chunks.append(chunk_result)
+                    # Small delay to be nice to rate limits
+                    await asyncio.sleep(0.5)
+                
+                return "\n\n".join(paraphrased_chunks)
+
             style_instructions = {
                 "formal": "formal, professional language",
                 "casual": "casual, conversational language",
@@ -300,14 +365,14 @@ class GenerativeTool:
         except Exception as e:
             logger.error(f"Error paraphrasing text: {str(e)}")
             return f"Error paraphrasing text: {str(e)}"
-    
+
     async def extract_key_insights(self, content: str, num_insights: int = 5) -> List[str]:
         """Extract key insights from the provided content"""
         try:
             if not content.strip():
                 return []
             
-            prompt = f"""Analyze the following content and extract {num_insights} key insights or takeaways.
+            prompt = f'''Analyze the following content and extract {num_insights} key insights or takeaways.
             
             Each insight should be:
             - A clear, concise statement
@@ -318,7 +383,7 @@ class GenerativeTool:
             Content:
             {content[:3000]}  # Limit content length
             
-            Key Insights:"""
+            Key Insights:'''
             
             response = await self.llm_service.generate_text(prompt, max_tokens=400, temperature=0.6)
             

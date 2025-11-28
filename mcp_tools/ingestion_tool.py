@@ -63,7 +63,12 @@ class IngestionTool:
                     "success": False,
                     "error": "Failed to create text chunks",
                     "task_id": task_id,
-                    "document_id": document.id
+                    "document_id": document.id,
+                    "filename": document.filename,
+                    "chunks_created": len(chunks),
+                    "content_length": len(document.content),
+                    "doc_type": document.doc_type.value,
+                    "message": f"Successfully processed {filename}"
                 }
             
             # Step 4: Store embeddings
@@ -77,6 +82,17 @@ class IngestionTool:
                     "task_id": task_id,
                     "document_id": document.id
                 }
+            
+            # Step 5: Update document metadata with chunk count
+            try:
+                current_metadata = document.metadata or {}
+                current_metadata["chunk_count"] = len(chunks)
+                await self.document_store.update_document_metadata(
+                    document.id, 
+                    {"metadata": current_metadata}
+                )
+            except Exception as e:
+                logger.warning(f"Failed to update chunk count for document {document.id}: {e}")
             
             logger.info(f"Successfully processed document {document.id} with {len(chunks)} chunks")
             
@@ -201,6 +217,17 @@ class IngestionTool:
             
             if chunks:
                 await self.vector_store.add_chunks(chunks)
+                
+                # Update document metadata with chunk count
+                try:
+                    current_metadata = document.metadata or {}
+                    current_metadata["chunk_count"] = len(chunks)
+                    await self.document_store.update_document_metadata(
+                        document.id, 
+                        {"metadata": current_metadata}
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to update chunk count for document {document.id}: {e}")
             
             return {
                 "success": True,
@@ -241,6 +268,17 @@ class IngestionTool:
             
             if chunks:
                 await self.vector_store.add_chunks(chunks)
+                
+                # Update document metadata with chunk count
+                try:
+                    current_metadata = document.metadata or {}
+                    current_metadata["chunk_count"] = len(chunks)
+                    await self.document_store.update_document_metadata(
+                        document.id, 
+                        {"metadata": current_metadata}
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to update chunk count for document {document.id}: {e}")
             
             return {
                 "success": True,

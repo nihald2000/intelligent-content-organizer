@@ -91,6 +91,15 @@ class VectorStoreService:
                 logger.warning("No valid embeddings found in chunks")
                 return False
             
+            # Check for dimension mismatch
+            if self.index is not None and self.dimension is not None:
+                if len(embeddings[0]) != self.dimension:
+                    logger.warning(f"Dimension mismatch! New embeddings have {len(embeddings[0])}, but index has {self.dimension}. Rebuilding index.")
+                    # Reset index
+                    self.index = None
+                    self.chunks_metadata = {}
+                    self.dimension = None
+
             # Initialize index if needed
             if self.index is None:
                 self._initialize_index(len(embeddings[0]))

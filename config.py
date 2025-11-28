@@ -10,16 +10,20 @@ class Config:
     NEBIUS_API_KEY: Optional[str] = os.getenv("NEBIUS_API_KEY")
     MISTRAL_API_KEY: Optional[str] = os.getenv("MISTRAL_API_KEY")
     HUGGINGFACE_API_KEY: Optional[str] = os.getenv("HUGGINGFACE_API_KEY", os.getenv("HF_TOKEN"))
+    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
+    ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
     
     # NEBIUS Configuration (OpenAI OSS models)
     NEBIUS_BASE_URL: str = os.getenv("NEBIUS_BASE_URL", "https://api.studio.nebius.com/v1/")
-    NEBIUS_MODEL: str = os.getenv("NEBIUS_MODEL", "openai/gpt-oss-120b")
+    NEBIUS_MODEL: str = os.getenv("NEBIUS_MODEL", "meta-llama/Llama-3.3-70B-Instruct")
     
     # Model Configuration
-    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-    ANTHROPIC_MODEL: str = os.getenv("ANTHROPIC_MODEL", "claude-3-haiku-20240307")
-    MISTRAL_MODEL: str = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    # Using OpenAI managed embeddings for performance/quality
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    
+    MISTRAL_MODEL: str = os.getenv("MISTRAL_MODEL", "mistral-large-2407")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-5.1-chat-latest")
+    FAST_MODEL: str = os.getenv("FAST_MODEL", "gpt-5-mini")
     
     # Vector Store Configuration
     DATA_DIR: str = os.getenv("DATA_DIR", "./data")

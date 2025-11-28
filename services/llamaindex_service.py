@@ -18,8 +18,8 @@ from llama_index.core.agent import ReActAgent
 from llama_index.core.selectors import LLMSingleSelector
 from llama_index.core.query_engine import RouterQueryEngine
 from llama_index.llms.openai import OpenAI
-from llama_index.llms.anthropic import Anthropic
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 import config
 from services.document_store_service import DocumentStoreService
@@ -45,19 +45,38 @@ class LlamaIndexService:
         try:
             # LLM Setup
             if self.config.OPENAI_API_KEY:
-                Settings.llm = OpenAI(model="gpt-4o-mini", api_key=self.config.OPENAI_API_KEY)
-                logger.info("LlamaIndex using OpenAI GPT-4o-mini")
-            elif self.config.ANTHROPIC_API_KEY:
-                Settings.llm = Anthropic(model="claude-3-haiku-20240307", api_key=self.config.ANTHROPIC_API_KEY)
-                logger.info("LlamaIndex using Anthropic Claude 3 Haiku")
+                # Use configured OpenAI model (gpt-5.1-chat-latest or similar)
+                Settings.llm = OpenAI(model=self.config.OPENAI_MODEL, api_key=self.config.OPENAI_API_KEY)
+                logger.info(f"LlamaIndex using OpenAI model: {self.config.OPENAI_MODEL}")
+            elif self.config.NEBIUS_API_KEY:
+                # Use Nebius as OpenAI-compatible provider
+                Settings.llm = OpenAI(
+                    model=self.config.NEBIUS_MODEL, 
+                    api_key=self.config.NEBIUS_API_KEY, 
+                    api_base=self.config.NEBIUS_BASE_URL
+                )
+                logger.info(f"LlamaIndex using Nebius model: {self.config.NEBIUS_MODEL}")
             else:
-                logger.warning("No API key found for LlamaIndex LLM. Agentic features may fail.")
+                logger.warning("No API key found for LlamaIndex LLM (OpenAI or Nebius). Agentic features may fail.")
 
             # Embedding Setup
-            Settings.embed_model = HuggingFaceEmbedding(
-                model_name="sentence-transformers/all-MiniLM-L6-v2"
-            )
-            logger.info("LlamaIndex using HuggingFace embeddings")
+            if self.config.EMBEDDING_MODEL.startswith("text-embedding-"):
+                if self.config.OPENAI_API_KEY:
+                    Settings.embed_model = OpenAIEmbedding(
+                        model=self.config.EMBEDDING_MODEL,
+                        api_key=self.config.OPENAI_API_KEY
+                    )
+                    logger.info(f"LlamaIndex using OpenAI embeddings: {self.config.EMBEDDING_MODEL}")
+                else:
+                    logger.warning("OpenAI embedding model requested but no API key found. Falling back to HuggingFace.")
+                    Settings.embed_model = HuggingFaceEmbedding(
+                        model_name="sentence-transformers/all-MiniLM-L6-v2"
+                    )
+            else:
+                Settings.embed_model = HuggingFaceEmbedding(
+                    model_name=self.config.EMBEDDING_MODEL
+                )
+                logger.info(f"LlamaIndex using HuggingFace embeddings: {self.config.EMBEDDING_MODEL}")
             
         except Exception as e:
             logger.error(f"Error initializing LlamaIndex settings: {str(e)}")

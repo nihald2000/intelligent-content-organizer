@@ -4,6 +4,7 @@ from typing import List, Optional, Dict, Any
 import numpy as np
 from sentence_transformers import SentenceTransformer
 import torch
+import openai
 import config
 
 logger = logging.getLogger(__name__)
@@ -14,7 +15,13 @@ class EmbeddingService:
         self.model_name = self.config.EMBEDDING_MODEL
         self.model = None
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.openai_client = None
+        self.is_openai_model = False
         
+        # Initialize OpenAI client if needed
+        if self.config.OPENAI_API_KEY:
+            self.openai_client = openai.OpenAI(api_key=self.config.OPENAI_API_KEY)
+
         # Load model lazily
         self._load_model()
     
@@ -22,13 +29,27 @@ class EmbeddingService:
         """Load the embedding model"""
         try:
             logger.info(f"Loading embedding model: {self.model_name}")
-            self.model = SentenceTransformer(self.model_name, device=self.device)
-            logger.info(f"Embedding model loaded successfully on {self.device}")
+            
+            if self.model_name.startswith("text-embedding-"):
+                if not self.openai_client:
+                    logger.warning(f"OpenAI model {self.model_name} requested but OPENAI_API_KEY not found. Falling back to local model.")
+                    self.model_name = "sentence-transformers/all-MiniLM-L6-v2"
+                    self.is_openai_model = False
+                    self.model = SentenceTransformer(self.model_name, device=self.device)
+                else:
+                    self.is_openai_model = True
+                    logger.info(f"Using OpenAI embedding model: {self.model_name}")
+            else:
+                self.is_openai_model = False
+                self.model = SentenceTransformer(self.model_name, device=self.device)
+                logger.info(f"Local embedding model loaded successfully on {self.device}")
+                
         except Exception as e:
             logger.error(f"Failed to load embedding model: {str(e)}")
             # Fallback to a smaller model
             try:
                 self.model_name = "all-MiniLM-L6-v2"
+                self.is_openai_model = False
                 self.model = SentenceTransformer(self.model_name, device=self.device)
                 logger.info(f"Loaded fallback embedding model: {self.model_name}")
             except Exception as fallback_error:
@@ -40,7 +61,7 @@ class EmbeddingService:
         if not texts:
             return []
         
-        if self.model is None:
+        if not self.is_openai_model and self.model is None:
             raise RuntimeError("Embedding model not loaded")
         
         try:
@@ -50,9 +71,9 @@ class EmbeddingService:
                 logger.warning("No non-empty texts provided for embedding")
                 return []
             
-            logger.info(f"Generating embeddings for {len(non_empty_texts)} texts")
+            logger.info(f"Generating embeddings for {len(non_empty_texts)} texts using {self.model_name}")
             
-            # Process in batches to manage memory
+            # Process in batches to manage memory/API limits
             all_embeddings = []
             for i in range(0, len(non_empty_texts), batch_size):
                 batch = non_empty_texts[i:i + batch_size]
@@ -76,16 +97,22 @@ class EmbeddingService:
     def _generate_batch_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings for a batch of texts (synchronous)"""
         try:
-            # Generate embeddings
-            embeddings = self.model.encode(
-                texts,
-                convert_to_numpy=True,
-                normalize_embeddings=True,
-                batch_size=len(texts)
-            )
-            
-            # Convert to list of lists
-            return embeddings.tolist()
+            if self.is_openai_model:
+                # OpenAI Embeddings
+                response = self.openai_client.embeddings.create(
+                    input=texts,
+                    model=self.model_name
+                )
+                return [data.embedding for data in response.data]
+            else:
+                # Local SentenceTransformer
+                embeddings = self.model.encode(
+                    texts,
+                    convert_to_numpy=True,
+                    normalize_embeddings=True,
+                    batch_size=len(texts)
+                )
+                return embeddings.tolist()
         except Exception as e:
             logger.error(f"Error in batch embedding generation: {str(e)}")
             raise
@@ -104,6 +131,18 @@ class EmbeddingService:
     
     def get_embedding_dimension(self) -> int:
         """Get the dimension of embeddings produced by the model"""
+        if self.is_openai_model:
+            if "small" in self.model_name:
+                return 1536
+            elif "large" in self.model_name:
+                return 3072
+            elif "ada" in self.model_name:
+                return 1536
+            else:
+                # Default fallback or make a call to check? 
+                # For now assume 1536 as it's standard for recent OpenAI models
+                return 1536
+        
         if self.model is None:
             raise RuntimeError("Embedding model not loaded")
         
@@ -194,10 +233,10 @@ class EmbeddingService:
         try:
             return {
                 "model_name": self.model_name,
-                "device": self.device,
+                "device": "openai-api" if self.is_openai_model else self.device,
                 "embedding_dimension": self.get_embedding_dimension(),
-                "max_sequence_length": getattr(self.model, 'max_seq_length', 'unknown'),
-                "model_loaded": self.model is not None
+                "max_sequence_length": "8191" if self.is_openai_model else getattr(self.model, 'max_seq_length', 'unknown'),
+                "model_loaded": self.is_openai_model or (self.model is not None)
             }
         except Exception as e:
             logger.error(f"Error getting model info: {str(e)}")
