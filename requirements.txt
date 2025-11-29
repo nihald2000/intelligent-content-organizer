@@ -1,4 +1,4 @@
-gradio[mcp]
+gradio[mcp]==5.32.0
 anthropic>=0.7.0
 mistralai
 sentence-transformers>=2.2.2
@@ -23,9 +23,10 @@ fastmcp
 mcp
 openai
 python-dotenv
-llama-index
+llama-index>=0.10.0
 llama-index-llms-openai
 llama-index-llms-anthropic
 llama-index-embeddings-huggingface
 elevenlabs>=1.0.0
+spaces
 websockets>=12.0
